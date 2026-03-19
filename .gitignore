@@ -1,4 +1,5 @@
 node_modules/
 secret/
+artifact/
 ios/App/Pods/
 ios/App/App/public/
