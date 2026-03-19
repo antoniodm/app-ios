@@ -1,0 +1,14 @@
+{
+  "appId": "com.octopusiot.example",
+  "appName": "Guardroom24",
+  "webDir": "web-placeholder",
+  "server": {
+    "url": "https://davinci.perfortuna.it",
+    "cleartext": false
+  },
+  "plugins": {
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"]
+    }
+  }
+}
