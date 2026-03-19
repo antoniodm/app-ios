@@ -1,0 +1,4 @@
+node_modules/
+secret/
+ios/App/Pods/
+ios/App/App/public/
