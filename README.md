@@ -14,8 +14,9 @@ App nativa iOS basata su **Capacitor 8** che wrappa la webapp `https://davinci.p
 6. [Come buildare](#6-come-buildare)
 7. [Come installare sul dispositivo](#7-come-installare-sul-dispositivo)
 8. [Flusso notifiche push](#8-flusso-notifiche-push)
-9. [Troubleshooting](#9-troubleshooting)
-10. [Note importanti e limitazioni](#10-note-importanti-e-limitazioni)
+9. [Autenticazione biometrica](#9-autenticazione-biometrica)
+10. [Troubleshooting](#10-troubleshooting)
+11. [Note importanti e limitazioni](#11-note-importanti-e-limitazioni)
 
 ---
 
@@ -606,7 +607,73 @@ Il server elimina il record dalla tabella `WP_FIREBASETOKENS`.
 
 ---
 
-## 9. Troubleshooting
+## 9. Autenticazione biometrica
+
+L'app supporta il login con **Face ID** o **Touch ID** tramite il plugin `@aparajita/capacitor-biometric-auth` v10. Su iOS, `NSFaceIDUsageDescription` in `Info.plist` e il pacchetto SPM `AparajitaCapacitorBiometricAuth` abilitano la funzionalita'.
+
+### 9.1 Flusso di attivazione
+
+1. L'utente esegue il **primo login manuale** con username e password
+2. Dopo il login, la webapp (`dwn.php`) mostra un popup:
+   > "Vuoi accedere con impronta digitale la prossima volta?"
+3. Se l'utente accetta, `saveBiometricCredentials()`:
+   - Salva `bio_username` e `bio_password` in `Preferences` (storage locale del dispositivo, non sincronizzato)
+   - Disabilita la richiesta OTP al login (`/json_set_otp_on_login` con `v_enabled: 0`) perche' la biometria e' gia' una forma di autenticazione forte
+4. Dal login successivo, il pulsante biometrico appare e viene auto-attivato dopo 800ms
+
+Il popup di offerta viene mostrato **una sola volta** (solo se `bio_username` non e' gia' salvato).
+
+### 9.2 Flusso di login biometrico
+
+```
+[Pagina login - aris.php]
+        |
+        | 1. checkBiometry() — Face ID / Touch ID disponibile?
+        | 2. Preferences.get('bio_username') — credenziali salvate?
+        v
+[BiometricAuthNative.internalAuthenticate()]
+        |
+        | Face ID / Touch ID OK
+        v
+[Legge bio_username + bio_password da Preferences]
+        |
+        | Compila il form e fa submit
+        v
+[Login completato — reindirizza alla dashboard]
+```
+
+**Login a due fasi (se il server richiede username prima della password):**
+- Step 1: inserisce `bio_username` nel campo login e fa submit → flag `bioPending` in sessionStorage
+- Step 2: la pagina si ricarica, trova `bioPending=1`, inserisce `bio_password` e fa submit automaticamente senza richiedere di nuovo la biometria
+
+### 9.3 Gestione nelle impostazioni
+
+La pagina **impostazioni account** (`modmetodoauth.php`) mostra una sezione "Accesso con biometria" visibile solo nell'app nativa. L'utente puo':
+
+- **Disabilitare**: rimuove `bio_username` e `bio_password` da Preferences → il pulsante biometrico sparisce al prossimo login
+- **Riabilitare**: esegue la verifica biometrica e risalva le credenziali correnti
+
+### 9.4 Pagina OTP
+
+Se la biometria e' configurata, la pagina OTP (`otpverifica.php`) rileva `bio_pending_login_otp` in Preferences e puo' auto-completare o bypassare l'OTP dopo verifica biometrica.
+
+### 9.5 Chiavi Preferences utilizzate
+
+| Chiave | Contenuto |
+|---|---|
+| `bio_username` | Username salvato |
+| `bio_password` | Password salvata (in chiaro nel keychain locale del dispositivo) |
+| `bio_pending_login_otp` | Flag temporaneo durante flusso login a 2 fasi |
+
+**Sicurezza:** Le credenziali vengono salvate nel keychain nativo del dispositivo tramite `@capacitor/preferences`. Su iOS, Capacitor Preferences usa `NSUserDefaults` per dati non sensibili — per un livello di sicurezza maggiore si potrebbe usare il Keychain direttamente. Attualmente il tradeoff e' accettabile perche' le credenziali sono protette a livello dispositivo (Face ID / Touch ID richiesto per usarle) e il dispositivo e' di proprieta' dell'utente.
+
+### 9.6 Comportamento se la biometria non e' disponibile
+
+Se `BiometricAuthNative.checkBiometry()` ritorna `isAvailable: false` (Face ID non configurato, nessuna impronta registrata), tutta la logica biometrica viene saltata silenziosamente. L'utente vede solo il form di login classico.
+
+---
+
+## 10. Troubleshooting
 
 ### Notifiche non arrivano
 
@@ -622,6 +689,68 @@ Il profilo Ad Hoc funziona solo su dispositivi il cui UDID e' incluso. Aggiunger
 **4. Verificare la chiave .p8 sul server:**
 La chiave deve essere in `gatewayproxy-batch/src/main/resources/AuthKey_V36CCN4Z9R.p8`.
 Log di avvio atteso: `APNs key caricata con successo!`
+
+### Token stale dopo reinstallazione app
+
+**Causa:** Ad ogni reinstallazione dell'app (inclusi aggiornamenti tramite Codemagic), iOS assegna un nuovo token APNs. Il vecchio token rimane nel database ma non e' piu' valido. Le notifiche vengono inviate al token vecchio e APNs risponde `410 Unregistered`.
+
+**Sintomo:** Le notifiche non arrivano anche se il server non mostra errori evidenti e il database contiene un token valido.
+
+**Soluzione:** Dopo ogni reinstallazione, l'utente deve premere il pulsante **"Abilita notifiche"** nella webapp per ri-registrare il token aggiornato. Il nuovo token viene salvato in `WP_FIREBASETOKENS` sovrascrivendo quello precedente.
+
+**Regola generale:** Ogni volta che si installa una nuova build (da Codemagic o via USB), premere "Abilita notifiche" prima di testare la ricezione delle notifiche.
+
+### Come testare APNs direttamente (senza gateway)
+
+Utile per verificare se la chiave `.p8` funziona e il token e' valido, indipendentemente dal server Java.
+
+**Step 1 — Generare il JWT ES256:**
+
+```python
+#!/usr/bin/env python3
+import jwt, time
+
+TEAM_ID  = "YVKBSQ6Y56"
+KEY_ID   = "V36CCN4Z9R"
+KEY_PATH = "/path/to/AuthKey_V36CCN4Z9R.p8"
+
+with open(KEY_PATH) as f:
+    key = f.read()
+
+token = jwt.encode(
+    {"iss": TEAM_ID, "iat": int(time.time())},
+    key,
+    algorithm="ES256",
+    headers={"kid": KEY_ID}
+)
+print(token)
+```
+
+```bash
+pip install PyJWT cryptography
+python3 gen_jwt.py
+```
+
+**Step 2 — Inviare la notifica con curl:**
+
+```bash
+APNS_JWT="<jwt generato sopra>"
+DEVICE_TOKEN="<64 char hex dal database WP_FIREBASETOKENS>"
+BUNDLE_ID="com.octopusiot.example"
+
+curl -v --http2 \
+  -H "authorization: bearer $APNS_JWT" \
+  -H "apns-topic: $BUNDLE_ID" \
+  -H "apns-push-type: alert" \
+  -H "apns-priority: 10" \
+  -H "content-type: application/json" \
+  -d '{"aps":{"alert":{"title":"Test","body":"Test APNs diretto"},"sound":"alarm.wav"}}' \
+  "https://api.push.apple.com/3/device/$DEVICE_TOKEN"
+```
+
+Risposta attesa: `HTTP/2 200` (body vuoto = successo). Se `alarm.wav` e' nel bundle iOS, viene riprodotto il suono personalizzato.
+
+**Nota:** Richiede `--http2` obbligatoriamente. Con HTTP/1.1 APNs chiude la connessione senza risposta.
 
 ### Errore APNs 400 - BadDeviceToken
 
@@ -669,7 +798,7 @@ Verificare la connettivita' di rete e che `https://davinci.perfortuna.it` sia ra
 
 ---
 
-## 10. Note importanti e limitazioni
+## 11. Note importanti e limitazioni
 
 ### Firebase SDK iOS NON e' installato
 
