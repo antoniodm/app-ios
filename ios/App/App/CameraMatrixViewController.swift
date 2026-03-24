@@ -6,11 +6,22 @@ class CameraMatrixViewController: UIViewController {
     var streamUrls: [String] = []
     var streamNames: [String] = []
 
-    private var players: [AVPlayer] = []
-    private var playerLayers: [AVPlayerLayer] = []
-    private var containerViews: [UIView] = []
+    // Stato per ogni stream
+    private var enabled: [Bool] = []
+    private var players: [AVPlayer?] = []
+    private var playerLayers: [AVPlayerLayer?] = []
+    private var playerViews: [UIView?] = []
+    private var endObservers: [NSObjectProtocol?] = []
+
+    private var scrollView: UIScrollView!
+    private var contentView: UIView!
     private var closeButton: UIButton!
+    private var streamsButton: UIButton!
     private var hideTimer: Timer?
+    private var watchdogTimer: Timer?
+
+    private var cols = 1
+    private var rows = 1
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
     override var prefersStatusBarHidden: Bool { true }
@@ -21,111 +32,264 @@ class CameraMatrixViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
-        setupPlayers()
-        setupCloseButton()
+
+        let count = streamUrls.count
+        enabled      = Array(repeating: true, count: count)
+        players      = Array(repeating: nil,  count: count)
+        playerLayers = Array(repeating: nil,  count: count)
+        playerViews  = Array(repeating: nil,  count: count)
+        endObservers = Array(repeating: nil,  count: count)
+
+        setupScrollView()
+        setupControls()
+        updateColsRows()
+        for i in 0..<count { createPlayer(at: i) }
+        buildGrid()
+
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
         view.addGestureRecognizer(tap)
-    }
 
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        layoutGrid()
+        startWatchdog()
     }
 
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
         super.viewWillTransition(to: size, with: coordinator)
         coordinator.animate(alongsideTransition: nil) { [weak self] _ in
-            self?.layoutGrid()
+            guard let self = self else { return }
+            self.updateColsRows()
+            self.buildGrid()
         }
     }
 
     // MARK: - Setup
 
-    private func setupPlayers() {
-        for urlStr in streamUrls {
-            guard let url = URL(string: urlStr) else { continue }
+    private func setupScrollView() {
+        scrollView = UIScrollView()
+        scrollView.backgroundColor = .black
+        scrollView.frame = view.bounds
+        scrollView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(scrollView)
 
-            let player = AVPlayer(url: url)
-            player.isMuted = true  // Telecamere di sorveglianza: nessun audio
-            players.append(player)
-
-            let layer = AVPlayerLayer(player: player)
-            layer.videoGravity = .resizeAspect
-            layer.backgroundColor = UIColor.black.cgColor
-            playerLayers.append(layer)
-
-            let container = UIView()
-            container.backgroundColor = .black
-            container.layer.addSublayer(layer)
-            containerViews.append(container)
-            view.addSubview(container)
-
-            player.play()
-        }
+        contentView = UIView()
+        contentView.backgroundColor = .black
+        scrollView.addSubview(contentView)
     }
 
-    private func setupCloseButton() {
-        closeButton = UIButton(type: .system)
-        closeButton.setTitle("✕  Chiudi", for: .normal)
-        closeButton.titleLabel?.font = .systemFont(ofSize: 20, weight: .medium)
-        closeButton.setTitleColor(.white, for: .normal)
-        closeButton.backgroundColor = UIColor.black.withAlphaComponent(0.8)
-        closeButton.layer.cornerRadius = 8
-        closeButton.contentEdgeInsets = UIEdgeInsets(top: 12, left: 24, bottom: 12, right: 24)
-        closeButton.isHidden = true
+    private func createPlayer(at i: Int) {
+        guard let url = URL(string: streamUrls[i]) else { return }
+
+        let item   = AVPlayerItem(url: url)
+        let player = AVPlayer(playerItem: item)
+        player.isMuted = true
+        players[i]      = player
+
+        let layer = AVPlayerLayer(player: player)
+        layer.videoGravity = .resizeAspect
+        layer.backgroundColor = UIColor.black.cgColor
+        playerLayers[i] = layer
+
+        let container = UIView()
+        container.backgroundColor = .black
+        container.layer.addSublayer(layer)
+        playerViews[i] = container
+
+        // Auto-reconnect quando il flusso termina
+        let obs = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: item,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self, self.enabled[i] else { return }
+            NSLog("GUARDROOM Cam %d: ENDED → riconnessione in 2s", i)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                guard let self = self, self.enabled[i], let p = self.players[i] else { return }
+                p.seek(to: .zero)
+                p.play()
+            }
+        }
+        endObservers[i] = obs
+
+        player.play()
+        NSLog("GUARDROOM Cam %d: avvio → %@", i, streamUrls[i])
+    }
+
+    private func setupControls() {
+        closeButton = makeControlButton("✕  Chiudi")
         closeButton.addTarget(self, action: #selector(closeAll), for: .touchUpInside)
+        closeButton.isHidden = true
         view.addSubview(closeButton)
+
+        streamsButton = makeControlButton(streamsBtnLabel())
+        streamsButton.addTarget(self, action: #selector(showStreamsDialog), for: .touchUpInside)
+        streamsButton.isHidden = true
+        view.addSubview(streamsButton)
+    }
+
+    private func makeControlButton(_ title: String) -> UIButton {
+        let btn = UIButton(type: .custom)
+        btn.setTitle(title, for: .normal)
+        btn.titleLabel?.font = .systemFont(ofSize: 18, weight: .medium)
+        btn.setTitleColor(.white, for: .normal)
+        btn.backgroundColor = UIColor.black.withAlphaComponent(0.8)
+        btn.layer.cornerRadius = 8
+        btn.contentEdgeInsets = UIEdgeInsets(top: 12, left: 24, bottom: 12, right: 24)
+        return btn
     }
 
     // MARK: - Layout
 
-    private func layoutGrid() {
-        let bounds = view.bounds
-        let count = containerViews.count
-        guard count > 0 else { return }
+    private func updateColsRows() {
+        let active = enabled.filter { $0 }.count
+        if active == 0 { cols = 1; rows = 1; return }
+        let isPortrait = view.bounds.height > view.bounds.width
+        cols = isPortrait ? 1 : (active == 1 ? 1 : active <= 4 ? 2 : 3)
+        rows = Int(ceil(Double(active) / Double(cols)))
+    }
 
-        // Portrait: 1 colonna impilata; Landscape: griglia come Android
-        let isPortrait = bounds.height > bounds.width
-        let cols: Int
-        if isPortrait {
-            cols = 1
-        } else {
-            cols = count == 1 ? 1 : count <= 4 ? 2 : 3
+    private func buildGrid() {
+        contentView.subviews.forEach { $0.removeFromSuperview() }
+
+        let screenW = view.bounds.width
+        let cellW   = screenW / CGFloat(max(cols, 1))
+        let cellH   = cellW * 9.0 / 16.0
+
+        let active = (0..<streamUrls.count).filter { enabled[$0] && playerViews[$0] != nil }
+        NSLog("GUARDROOM buildGrid: %d stream attivi, griglia %dx%d", active.count, cols, rows)
+
+        var pos = 0
+        var yOffset: CGFloat = 0
+        for _ in 0..<rows {
+            var xOffset: CGFloat = 0
+            for _ in 0..<cols {
+                guard pos < active.count else { break }
+                let si = active[pos]; pos += 1
+
+                let container = playerViews[si]!
+                container.frame = CGRect(x: xOffset, y: yOffset, width: cellW, height: cellH)
+                contentView.addSubview(container)
+                playerLayers[si]?.frame = container.bounds
+
+                xOffset += cellW
+            }
+            yOffset += cellH
         }
-        let rows = Int(ceil(Double(count) / Double(cols)))
 
-        let cellW = bounds.width / CGFloat(cols)
-        let cellH = bounds.height / CGFloat(rows)
+        let totalH = max(CGFloat(rows) * cellH, 1)
+        contentView.frame = CGRect(x: 0, y: 0, width: screenW, height: totalH)
+        scrollView.contentSize = CGSize(width: screenW, height: totalH)
 
-        for (i, container) in containerViews.enumerated() {
-            let col = i % cols
-            let row = i / cols
-            let frame = CGRect(
-                x: CGFloat(col) * cellW,
-                y: CGFloat(row) * cellH,
-                width: cellW,
-                height: cellH
-            )
-            container.frame = frame
-            playerLayers[i].frame = container.bounds
-        }
-
+        // Posiziona i controlli sopra lo scroll
+        let safeTop: CGFloat = 48
         closeButton.sizeToFit()
-        closeButton.center = CGPoint(x: bounds.midX, y: bounds.midY)
+        closeButton.frame.origin = CGPoint(x: screenW - closeButton.frame.width - 16, y: safeTop)
+        streamsButton.sizeToFit()
+        streamsButton.frame.origin = CGPoint(x: 16, y: safeTop)
         view.bringSubviewToFront(closeButton)
+        view.bringSubviewToFront(streamsButton)
+    }
+
+    // MARK: - Gestione flussi
+
+    @objc private func showStreamsDialog() {
+        let alert = UIAlertController(title: "Flussi", message: nil, preferredStyle: .actionSheet)
+        for (i, name) in streamNames.enumerated() {
+            let mark = enabled[i] ? "✓ " : "○ "
+            let info = streamInfo(i)
+            alert.addAction(UIAlertAction(title: mark + name + info, style: .default) { [weak self] _ in
+                guard let self = self else { return }
+                if self.enabled[i] { self.disableStream(i) } else { self.enableStream(i) }
+            })
+        }
+        alert.addAction(UIAlertAction(title: "OK", style: .cancel))
+        if let pop = alert.popoverPresentationController {
+            pop.sourceView = streamsButton
+            pop.sourceRect = streamsButton.bounds
+        }
+        present(alert, animated: true)
+    }
+
+    private func streamInfo(_ i: Int) -> String {
+        guard enabled[i], let item = players[i]?.currentItem else { return "" }
+        for track in item.tracks {
+            guard let asset = track.assetTrack, asset.mediaType == .video else { continue }
+            let size = asset.naturalSize.applying(asset.preferredTransform)
+            let w = Int(abs(size.width)); let h = Int(abs(size.height))
+            if w > 0 && h > 0 { return "\n\(w)×\(h)  HLS" }
+        }
+        return "\nHLS"
+    }
+
+    private func enableStream(_ i: Int) {
+        guard !enabled[i] else { return }
+        NSLog("GUARDROOM Cam %d (%@): enable", i, streamNames[i])
+        enabled[i] = true
+        createPlayer(at: i)
+        updateColsRows()
+        buildGrid()
+        streamsButton.setTitle(streamsBtnLabel(), for: .normal)
+        streamsButton.sizeToFit()
+    }
+
+    private func disableStream(_ i: Int) {
+        guard enabled[i] else { return }
+        NSLog("GUARDROOM Cam %d (%@): disable", i, streamNames[i])
+        enabled[i] = false
+        if let obs = endObservers[i] { NotificationCenter.default.removeObserver(obs) }
+        endObservers[i] = nil
+        players[i]?.pause()
+        players[i] = nil
+        playerLayers[i]?.removeFromSuperlayer()
+        playerLayers[i] = nil
+        playerViews[i]?.removeFromSuperview()
+        playerViews[i] = nil
+        updateColsRows()
+        buildGrid()
+        streamsButton.setTitle(streamsBtnLabel(), for: .normal)
+        streamsButton.sizeToFit()
+    }
+
+    private func streamsBtnLabel() -> String {
+        let active = enabled.filter { $0 }.count
+        return "≡  \(active)/\(streamUrls.count) flussi"
+    }
+
+    // MARK: - Watchdog
+
+    private func startWatchdog() {
+        watchdogTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            self?.checkStreams()
+        }
+    }
+
+    private func checkStreams() {
+        for i in 0..<players.count {
+            guard enabled[i], let player = players[i],
+                  let item = player.currentItem, item.status == .failed else { continue }
+            NSLog("GUARDROOM Cam %d: errore AVPlayerItem → riconnessione", i)
+            if let obs = endObservers[i] { NotificationCenter.default.removeObserver(obs) }
+            endObservers[i] = nil
+            playerLayers[i]?.removeFromSuperlayer()
+            playerLayers[i] = nil
+            playerViews[i]?.removeFromSuperview()
+            playerViews[i] = nil
+            players[i] = nil
+            createPlayer(at: i)
+            buildGrid()
+        }
     }
 
     // MARK: - Actions
 
     @objc private func handleTap() {
         hideTimer?.invalidate()
-        if closeButton.isHidden {
-            closeButton.isHidden = false
+        let hidden = closeButton.isHidden
+        closeButton.isHidden  = !hidden
+        streamsButton.isHidden = !hidden
+        if hidden {
             hideTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in
-                self?.closeButton.isHidden = true
+                self?.closeButton.isHidden  = true
+                self?.streamsButton.isHidden = true
             }
-        } else {
-            closeButton.isHidden = true
         }
     }
 
@@ -140,14 +304,19 @@ class CameraMatrixViewController: UIViewController {
     private func releaseAll() {
         hideTimer?.invalidate()
         hideTimer = nil
-        players.forEach { $0.pause() }
+        watchdogTimer?.invalidate()
+        watchdogTimer = nil
+        for i in 0..<players.count {
+            if let obs = endObservers[i] { NotificationCenter.default.removeObserver(obs) }
+            players[i]?.pause()
+        }
         players.removeAll()
-        playerLayers.forEach { $0.removeFromSuperlayer() }
+        playerLayers.forEach { $0?.removeFromSuperlayer() }
         playerLayers.removeAll()
-        containerViews.removeAll()
+        playerViews.removeAll()
+        endObservers.removeAll()
+        enabled.removeAll()
     }
 
-    deinit {
-        releaseAll()
-    }
+    deinit { releaseAll() }
 }
