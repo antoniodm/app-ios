@@ -15,17 +15,31 @@ public class ExoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
     static var pendingCloseJs: String?
 
     /**
-     * Su iOS AVPlayer supporta solo HLS. Restituisce sempre "hls".
+     * Mostra il dialog di scelta tipo player e restituisce la scelta al JS.
      */
     @objc func askPlayerType(_ call: CAPPluginCall) {
-        var result = JSObject()
-        result["type"] = "hls"
-        call.resolve(result)
+        DispatchQueue.main.async {
+            let alert = UIAlertController(
+                title: "Control Room",
+                message: "Scegli il tipo di player:",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "WebRTC  (bassa latenza)", style: .default) { _ in
+                var result = JSObject(); result["type"] = "webrtc"; call.resolve(result)
+            })
+            alert.addAction(UIAlertAction(title: "HLS  (compatibile)", style: .default) { _ in
+                var result = JSObject(); result["type"] = "hls"; call.resolve(result)
+            })
+            alert.addAction(UIAlertAction(title: "Annulla", style: .cancel) { _ in
+                call.reject("cancelled")
+            })
+            self.bridge?.viewController?.present(alert, animated: true)
+        }
     }
 
     /**
      * Apre la matrix di stream.
-     * Il parametro "type" è ignorato su iOS (AVPlayer supporta solo HLS).
+     * Se "type" non è specificato mostra il dialog di scelta (WebRTC / RTSP / HLS).
      */
     @objc func openMatrix(_ call: CAPPluginCall) {
         guard let streams = call.getArray("streams") as? [[String: Any]], !streams.isEmpty else {
@@ -33,14 +47,14 @@ public class ExoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        var urls:   [String] = []
-        var names:  [String] = []
+        var hlsUrls: [String] = []
+        var names:   [String] = []
         var closeJs = "(function(){"
 
         for (i, stream) in streams.enumerated() {
             let url  = stream["url"]  as? String ?? ""
             let name = stream["name"] as? String ?? "Cam \(i + 1)"
-            urls.append(url)
+            hlsUrls.append(url)
             names.append(name)
 
             let seriale            = stream["seriale"]            as? String ?? ""
@@ -54,13 +68,58 @@ public class ExoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
         ExoPlayerPlugin.sharedBridge = bridge
         ExoPlayerPlugin.pendingCloseJs = closeJs
 
+        let typeParam = call.getString("type")
+
+        if let type = typeParam {
+            launchMatrix(type: type, hlsUrls: hlsUrls, names: names)
+            call.resolve()
+        } else {
+            DispatchQueue.main.async {
+                let alert = UIAlertController(
+                    title: "Control Room — tipo di player",
+                    message: nil,
+                    preferredStyle: .actionSheet
+                )
+                let options: [(String, String)] = [
+                    ("WebRTC  (bassa latenza)", "webrtc"),
+                    ("RTSP  (H.265 supportato)", "rtsp"),
+                    ("HLS  (compatibile)",       "hls"),
+                ]
+                for (title, type) in options {
+                    alert.addAction(UIAlertAction(title: title, style: .default) { [weak self] _ in
+                        self?.launchMatrix(type: type, hlsUrls: hlsUrls, names: names)
+                        call.resolve()
+                    })
+                }
+                alert.addAction(UIAlertAction(title: "Annulla", style: .cancel) { _ in
+                    call.reject("cancelled")
+                })
+                if let pop = alert.popoverPresentationController {
+                    pop.sourceView = self.bridge?.viewController?.view
+                    pop.sourceRect = CGRect(x: UIScreen.main.bounds.midX, y: UIScreen.main.bounds.midY, width: 0, height: 0)
+                    pop.permittedArrowDirections = []
+                }
+                self.bridge?.viewController?.present(alert, animated: true)
+            }
+        }
+    }
+
+    private func launchMatrix(type: String, hlsUrls: [String], names: [String]) {
+        var finalUrls: [String]
+        switch type {
+        case "webrtc":
+            finalUrls = hlsUrls.map { ExoPlayerPlugin.hlsToWhep($0) }
+        case "rtsp":
+            finalUrls = hlsUrls.map { ExoPlayerPlugin.hlsToRtsp($0) }
+        default:
+            finalUrls = hlsUrls
+        }
         DispatchQueue.main.async {
             let vc = CameraMatrixViewController()
-            vc.streamUrls  = urls
+            vc.streamUrls  = finalUrls
             vc.streamNames = names
             vc.modalPresentationStyle = .overFullScreen
             self.bridge?.viewController?.present(vc, animated: false)
-            call.resolve()
         }
     }
 
