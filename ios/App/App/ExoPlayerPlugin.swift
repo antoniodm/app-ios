@@ -105,19 +105,26 @@ public class ExoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func launchMatrix(type: String, hlsUrls: [String], names: [String]) {
-        var finalUrls: [String]
-        switch type {
-        case "webrtc":
-            finalUrls = hlsUrls.map { ExoPlayerPlugin.hlsToWhep($0) }
-        case "rtsp":
-            finalUrls = hlsUrls.map { ExoPlayerPlugin.hlsToRtsp($0) }
-        default:
-            finalUrls = hlsUrls
-        }
         DispatchQueue.main.async {
-            let vc = CameraMatrixViewController()
-            vc.streamUrls  = finalUrls
-            vc.streamNames = names
+            let vc: UIViewController
+            switch type {
+            case "webrtc":
+                let webrtcVc = CameraMatrixWebRTCViewController()
+                webrtcVc.streamUrls  = hlsUrls.map { ExoPlayerPlugin.hlsToWhep($0) }
+                webrtcVc.streamNames = names
+                vc = webrtcVc
+            case "rtsp":
+                // AVPlayer non supporta RTSP su iOS → usa HLS come fallback
+                let hlsVc = CameraMatrixViewController()
+                hlsVc.streamUrls  = hlsUrls
+                hlsVc.streamNames = names
+                vc = hlsVc
+            default: // "hls"
+                let hlsVc = CameraMatrixViewController()
+                hlsVc.streamUrls  = hlsUrls
+                hlsVc.streamNames = names
+                vc = hlsVc
+            }
             vc.modalPresentationStyle = .overFullScreen
             self.bridge?.viewController?.present(vc, animated: false)
         }
