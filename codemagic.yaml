@@ -60,10 +60,6 @@ workflows:
       - name: Clean DerivedData
         script: rm -rf ~/Library/Developer/Xcode/DerivedData/*
 
-      - name: Install Pods
-        script: |
-          pod install --repo-update
-
       - name: Build iOS IPA
         script: |
           xcodebuild clean \
