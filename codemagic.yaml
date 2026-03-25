@@ -21,7 +21,15 @@ workflows:
       # 2️⃣ Sincronizza Capacitor per iOS
       - name: Capacitor sync
         script: npx cap sync ios
-
+      
+      - name: Remove VisionOS from WebRTC Package.swift
+        script: |
+          PACKAGE_PATH="ios/App/CapApp-SPM/Package.swift"
+          if [ -f "$PACKAGE_PATH" ]; then
+            echo "Rimuovo target VisionOS dal Package.swift..."
+            sed -i '' '/\.visionOS/d' "$PACKAGE_PATH"
+          fi
+      
       # 3️⃣ Aggiunge WebRTC via Swift Package Manager
       - name: Add WebRTC to CapApp-SPM
         script: |
