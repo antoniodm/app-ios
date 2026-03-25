@@ -67,27 +67,6 @@ workflows:
       - name: Clean DerivedData
         script: rm -rf ~/Library/Developer/Xcode/DerivedData/*
 
-      # 7️⃣ Creazione ExportOptions.plist se non esiste
-      - name: Create ExportOptions.plist if missing
-        script: |
-          PLIST_PATH="ios/App/ExportOptions.plist"
-          if [ ! -f "$PLIST_PATH" ]; then
-            echo "Creazione ExportOptions.plist per ad-hoc"
-            cat > "$PLIST_PATH" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-"http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>method</key>
-    <string>ad-hoc</string>
-    <key>signingStyle</key>
-    <string>automatic</string>
-</dict>
-</plist>
-EOF
-          fi
-
       # 8️⃣ Build IPA
       - name: Build iOS IPA
         script: |
