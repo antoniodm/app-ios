@@ -30,7 +30,8 @@ workflows:
           if 'webrtc-sdk' not in c:
               c = c.replace(
                   '    dependencies: [',
-                  '    dependencies: [\n        .package(url: "https://github.com/webrtc-sdk/Specs.git", exact: "144.7559.01"),'
+                  '    dependencies: [\n        .package(url: "https://github.com/webrtc-sdk/Specs.git", exact: "144.7559.01"),',
+                  1
               )
               first = c.index('.product(name: "Capacitor"')
               c = c[:first] + '.product(name: "WebRTC", package: "Specs"),\n                ' + c[first:]
