@@ -22,47 +22,16 @@ workflows:
       - name: Capacitor sync
         script: npx cap sync ios
 
-      # 3️⃣ Rimuove target VisionOS dal Package.swift (robusto)
+      # 3️⃣ Rimuovi VisionOS da WebRTC
       - name: Remove VisionOS from WebRTC Package.swift
         script: |
           PACKAGE_PATH="ios/App/CapApp-SPM/Package.swift"
           if [ -f "$PACKAGE_PATH" ]; then
             echo "Rimuovo target VisionOS dal Package.swift..."
-            sed -i '' '/^[[:space:]]*\.visionOS/d' "$PACKAGE_PATH"
-            if grep -q "visionOS" "$PACKAGE_PATH"; then
-              echo "ERRORE: VisionOS non rimosso!"
-              exit 1
-            else
-              echo "VisionOS rimosso correttamente."
-            fi
+            sed -i '' '/\.visionOS/d' "$PACKAGE_PATH"
           fi
 
-      # 4️⃣ Aggiunge WebRTC via Swift Package Manager
-      - name: Add WebRTC to CapApp-SPM
-        script: |
-          python3 - << 'PYEOF'
-          import re
-          path = 'ios/App/CapApp-SPM/Package.swift'
-          c = open(path).read()
-          if 'webrtc-sdk' not in c:
-              c = c.replace(
-                  '    dependencies: [',
-                  '    dependencies: [\n        .package(url: "https://github.com/webrtc-sdk/Specs.git", exact: "144.7559.01"),',
-                  1
-              )
-              first = c.index('.product(name: "Capacitor"')
-              c = c[:first] + '.product(name: "WebRTC", package: "Specs"),\n                ' + c[first:]
-              open(path, 'w').write(c)
-              print('WebRTC aggiunto a Package.swift')
-          else:
-              print('WebRTC gia presente in Package.swift')
-          PYEOF
-
-          cat > ios/App/CapApp-SPM/Sources/CapApp-SPM/WebRTCExport.swift << 'SWIFTEOF'
-          @_exported import WebRTC
-          SWIFTEOF
-
-      # 5️⃣ Debug progetto
+      # 4️⃣ Debug progetto
       - name: Debug - verify project state
         script: |
           echo "=== Package.swift ==="
@@ -74,15 +43,15 @@ workflows:
           echo "=== xcodebuild showBuildSettings (raw) ==="
           xcodebuild -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -showBuildSettings 2>&1 | tail -30 || true
 
-      # 6️⃣ Configura firma codice
+      # 5️⃣ Configura firma codice
       - name: Set up code signing
         script: xcode-project use-profiles
 
-      # 7️⃣ Pulizia DerivedData
+      # 6️⃣ Pulizia DerivedData
       - name: Clean DerivedData
         script: rm -rf ~/Library/Developer/Xcode/DerivedData/*
 
-      # 8️⃣ Build IPA
+      # 7️⃣ Build IPA
       - name: Build iOS IPA
         script: |
           set -e
