@@ -11,6 +11,7 @@ workflows:
       vars:
         XCODE_PROJECT: "ios/App/App.xcodeproj"
         XCODE_SCHEME: "App"
+      xcode: 16.2
       node: latest
 
     scripts:
