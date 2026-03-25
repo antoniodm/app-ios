@@ -21,6 +21,28 @@ workflows:
       - name: Capacitor sync
         script: npx cap sync ios
 
+      - name: Add WebRTC to CapApp-SPM
+        script: |
+          python3 - << 'PYEOF'
+          import re, sys
+          path = 'ios/App/CapApp-SPM/Package.swift'
+          c = open(path).read()
+          if 'webrtc-sdk' not in c:
+              c = c.replace(
+                  '    dependencies: [',
+                  '    dependencies: [\n        .package(url: "https://github.com/webrtc-sdk/Specs.git", exact: "144.7559.01"),'
+              )
+              first = c.index('.product(name: "Capacitor"')
+              c = c[:first] + '.product(name: "WebRTC", package: "Specs"),\n                ' + c[first:]
+              open(path, 'w').write(c)
+              print('WebRTC aggiunto a Package.swift')
+          else:
+              print('WebRTC gia presente in Package.swift')
+          PYEOF
+          cat > ios/App/CapApp-SPM/Sources/CapApp-SPM/WebRTCExport.swift << 'SWIFTEOF'
+          @_exported import WebRTC
+          SWIFTEOF
+
       - name: Set up code signing
         script: xcode-project use-profiles
 
