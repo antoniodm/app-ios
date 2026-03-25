@@ -9,7 +9,7 @@ workflows:
         distribution_type: ad_hoc
         bundle_identifier: com.octopusiot.example
       vars:
-        XCODE_WORKSPACE: "ios/App/App.xcworkspace"
+        XCODE_WORKSPACE: "ios/App/App.xcodeproj"
         XCODE_SCHEME: "App"
       node: latest
 
@@ -63,13 +63,15 @@ workflows:
       - name: Build iOS IPA
         script: |
           xcodebuild clean \
-            -workspace "$XCODE_WORKSPACE" \
+            -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" \
             -configuration Release
+          
           xcodebuild archive \
-            -workspace "$XCODE_WORKSPACE" \
+            -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" \
             -archivePath "$PWD/build/App.xcarchive"
+          
           xcodebuild -exportArchive \
             -archivePath "$PWD/build/App.xcarchive" \
             -exportOptionsPlist ios/App/ExportOptions.plist \
