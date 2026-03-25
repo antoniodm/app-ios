@@ -14,64 +14,63 @@ workflows:
       node: latest
 
     scripts:
-      # Pulizia DerivedData
       - name: Clean DerivedData
         script: rm -rf ~/Library/Developer/Xcode/DerivedData/*
 
-      # 1️⃣ Install npm dependencies
+      # 1️⃣ Installa dipendenze npm
       - name: Install npm dependencies
         script: npm install
 
-      # 2️⃣ Sync Capacitor
+      # 2️⃣ Sincronizza Capacitor per iOS
       - name: Capacitor sync
         script: npx cap sync ios
 
-      # 3️⃣ Remove VisionOS target if presente
+      # 3️⃣ Rimuovo VisionOS dal Package.swift
       - name: Remove VisionOS from Package.swift
         script: |
           PACKAGE_PATH="ios/App/CapApp-SPM/Package.swift"
           if [ -f "$PACKAGE_PATH" ]; then
+            echo "Rimuovo target VisionOS dal Package.swift..."
             sed -i '' '/\.visionOS/d' "$PACKAGE_PATH"
           fi
 
-      # 4️⃣ Resolve Swift packages (necessario anche se usi xcframework)
+      # 4️⃣ Risolvo pacchetti Swift
       - name: Resolve Swift packages
         script: xcodebuild -resolvePackageDependencies -project "$XCODE_PROJECT"
 
-      # 5️⃣ Debug info (opzionale)
-      - name: Debug project
+      # 5️⃣ Debug progetto (opzionale)
+      - name: Debug - verify project state
         script: |
-          echo "Listing Frameworks..."
-          ls ios/App/Frameworks
-          echo "Package.swift:"
-          cat ios/App/CapApp-SPM/Package.swift || echo "MISSING"
+          echo "=== Package.swift ==="
+          cat ios/App/CapApp-SPM/Package.swift
+          echo "=== xcodebuild showBuildSettings ==="
+          xcodebuild -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -showBuildSettings 2>&1 | tail -30 || true
 
-      # 6️⃣ Setup code signing
+      # 6️⃣ Configura firma codice
       - name: Set up code signing
         script: xcode-project use-profiles
 
       # 7️⃣ Build IPA
       - name: Build iOS IPA
         script: |
+          #!/usr/bin/env bash
           set -e
           echo "Building $XCODE_PROJECT scheme $XCODE_SCHEME"
 
-          # Clean
+          # Pulizia
           xcodebuild clean \
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" \
             -configuration Release
 
-          # Archive con flag per WebRTC.xcframework
+          # Archiviazione
           xcodebuild archive \
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" \
             -archivePath "$PWD/build/App.xcarchive" \
             -configuration Release \
-            -quiet \
             -allowProvisioningUpdates \
-            -destination 'generic/platform=iOS' \
-            -framework "ios/App/Frameworks/WebRTC.xcframework"
+            -destination 'generic/platform=iOS'
 
           # Export IPA
           xcodebuild -exportArchive \
