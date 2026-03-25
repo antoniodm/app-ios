@@ -20,6 +20,7 @@
 		BB00000100040000ABCD0001 /* CameraMatrixViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000100030000ABCD0001 /* CameraMatrixViewController.swift */; };
 		BB00000100060000ABCD0001 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000100050000ABCD0001 /* MainViewController.swift */; };
 		BB00000100080000ABCD0001 /* CameraMatrixWebRTCViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000100070000ABCD0001 /* CameraMatrixWebRTCViewController.swift */; };
+		CC00000100030000ABCD0001 /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = CC00000100020000ABCD0001 /* WebRTC */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -46,6 +47,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */,
+				CC00000100030000ABCD0001 /* WebRTC in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -107,6 +109,7 @@
 			name = App;
 			packageProductDependencies = (
 				4D22ABE82AF431CB00220026 /* CapApp-SPM */,
+				CC00000100020000ABCD0001 /* WebRTC */,
 			);
 			productName = App;
 			productReference = 504EC3041FED79650016851F /* App.app */;
@@ -139,6 +142,7 @@
 			mainGroup = 504EC2FB1FED79650016851F;
 			packageReferences = (
 				D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */,
+				CC00000100010000ABCD0001 /* XCRemoteSwiftPackageReference "Specs" */,
 			);
 			productRefGroup = 504EC3051FED79650016851F /* Products */;
 			projectDirPath = "";
@@ -379,6 +383,17 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		CC00000100010000ABCD0001 /* XCRemoteSwiftPackageReference "Specs" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			requirement = {
+				kind = exactVersion;
+				version = "144.7559.01";
+			};
+			repositoryURL = "https://github.com/webrtc-sdk/Specs.git";
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCLocalSwiftPackageReference section */
 		D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */ = {
 			isa = XCLocalSwiftPackageReference;
@@ -391,6 +406,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */;
 			productName = "CapApp-SPM";
+		};
+		CC00000100020000ABCD0001 /* WebRTC */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CC00000100010000ABCD0001 /* XCRemoteSwiftPackageReference "Specs" */;
+			productName = WebRTC;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
