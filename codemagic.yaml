@@ -9,7 +9,7 @@ workflows:
         distribution_type: ad_hoc
         bundle_identifier: com.octopusiot.example
       vars:
-        XCODE_PROJECT: "ios/App/App.xcodeproj"
+        XCODE_WORKSPACE: "ios/App/App.xcworkspace"
         XCODE_SCHEME: "App"
       node: latest
 
@@ -52,16 +52,32 @@ workflows:
           echo "=== CameraMatrixWebRTCViewController in pbxproj ==="
           grep -n "CameraMatrixWebRTC" ios/App/App.xcodeproj/project.pbxproj || echo "NOT FOUND in pbxproj"
           echo "=== xcodebuild showBuildSettings (raw) ==="
-          xcodebuild -project ios/App/App.xcodeproj -scheme App -showBuildSettings 2>&1 | tail -30 || true
+          xcodebuild -workspace "$XCODE_WORKSPACE" -scheme "$XCODE_SCHEME" -showBuildSettings 2>&1 | tail -30 || true
 
       - name: Set up code signing
         script: xcode-project use-profiles
 
+      - name: Clean DerivedData
+        script: rm -rf ~/Library/Developer/Xcode/DerivedData/*
+
+      - name: Install Pods
+        script: |
+          pod install --repo-update
+
       - name: Build iOS IPA
         script: |
-          xcode-project build-ipa \
-            --project "$XCODE_PROJECT" \
-            --scheme "$XCODE_SCHEME"
+          xcodebuild clean \
+            -workspace "$XCODE_WORKSPACE" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Release
+          xcodebuild archive \
+            -workspace "$XCODE_WORKSPACE" \
+            -scheme "$XCODE_SCHEME" \
+            -archivePath "$PWD/build/App.xcarchive"
+          xcodebuild -exportArchive \
+            -archivePath "$PWD/build/App.xcarchive" \
+            -exportOptionsPlist ios/App/ExportOptions.plist \
+            -exportPath "$PWD/build/ios/ipa"
 
     artifacts:
       - build/ios/ipa/*.ipa
