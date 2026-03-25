@@ -22,15 +22,27 @@ workflows:
       - name: Capacitor sync
         script: npx cap sync ios
       
+      # 3️⃣ Rimuove VisionOS dal Package.swift
       - name: Remove VisionOS from WebRTC Package.swift
         script: |
           PACKAGE_PATH="ios/App/CapApp-SPM/Package.swift"
           if [ -f "$PACKAGE_PATH" ]; then
             echo "Rimuovo target VisionOS dal Package.swift..."
             sed -i '' '/\.visionOS/d' "$PACKAGE_PATH"
+
+            # ✅ Check post-rimozione
+            if grep -q "\.visionOS" "$PACKAGE_PATH"; then
+              echo "ERRORE: VisionOS non rimosso correttamente!"
+              exit 1
+            else
+              echo "VisionOS rimosso correttamente."
+            fi
+          else
+            echo "Package.swift non trovato!"
+            exit 1
           fi
       
-      # 3️⃣ Aggiunge WebRTC via Swift Package Manager
+      # 4️⃣ Aggiunge WebRTC via Swift Package Manager
       - name: Add WebRTC to CapApp-SPM
         script: |
           python3 - << 'PYEOF'
@@ -55,7 +67,7 @@ workflows:
           @_exported import WebRTC
           SWIFTEOF
 
-      # 4️⃣ Debug progetto
+      # 5️⃣ Debug progetto
       - name: Debug - verify project state
         script: |
           echo "=== Package.swift ==="
@@ -67,11 +79,11 @@ workflows:
           echo "=== xcodebuild showBuildSettings (raw) ==="
           xcodebuild -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -showBuildSettings 2>&1 | tail -30 || true
 
-      # 5️⃣ Configura firma codice
+      # 6️⃣ Configura firma codice
       - name: Set up code signing
         script: xcode-project use-profiles
 
-      # 6️⃣ Pulizia DerivedData
+      # 7️⃣ Pulizia DerivedData
       - name: Clean DerivedData
         script: rm -rf ~/Library/Developer/Xcode/DerivedData/*
 
