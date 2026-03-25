@@ -1,6 +1,6 @@
 import UIKit
 import AVFoundation
-import WebRTC
+import WebRTCBridge
 
 class CameraMatrixWebRTCViewController: UIViewController {
 

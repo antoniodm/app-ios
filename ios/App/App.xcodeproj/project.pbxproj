@@ -20,6 +20,7 @@
 		BB00000100040000ABCD0001 /* CameraMatrixViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000100030000ABCD0001 /* CameraMatrixViewController.swift */; };
 		BB00000100060000ABCD0001 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000100050000ABCD0001 /* MainViewController.swift */; };
 		BB00000100080000ABCD0001 /* CameraMatrixWebRTCViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000100070000ABCD0001 /* CameraMatrixWebRTCViewController.swift */; };
+		DD00000100030000ABCD0001 /* WebRTCBridge in Frameworks */ = {isa = PBXBuildFile; productRef = DD00000100020000ABCD0001 /* WebRTCBridge */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -46,6 +47,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */,
+				DD00000100030000ABCD0001 /* WebRTCBridge in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -107,6 +109,7 @@
 			name = App;
 			packageProductDependencies = (
 				4D22ABE82AF431CB00220026 /* CapApp-SPM */,
+				DD00000100020000ABCD0001 /* WebRTCBridge */,
 			);
 			productName = App;
 			productReference = 504EC3041FED79650016851F /* App.app */;
@@ -139,6 +142,7 @@
 			mainGroup = 504EC2FB1FED79650016851F;
 			packageReferences = (
 				D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */,
+				DD00000100010000ABCD0001 /* XCLocalSwiftPackageReference "WebRTCBridge" */,
 			);
 			productRefGroup = 504EC3051FED79650016851F /* Products */;
 			projectDirPath = "";
@@ -384,6 +388,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = "CapApp-SPM";
 		};
+		DD00000100010000ABCD0001 /* XCLocalSwiftPackageReference "WebRTCBridge" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "WebRTCBridge";
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -391,6 +399,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D4C12C0A2AAA248700AAC8A2 /* XCLocalSwiftPackageReference "CapApp-SPM" */;
 			productName = "CapApp-SPM";
+		};
+		DD00000100020000ABCD0001 /* WebRTCBridge */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DD00000100010000ABCD0001 /* XCLocalSwiftPackageReference "WebRTCBridge" */;
+			productName = "WebRTCBridge";
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
