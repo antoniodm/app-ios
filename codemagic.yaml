@@ -14,6 +14,10 @@ workflows:
       node: latest
 
     scripts:
+      # 0️⃣ Pulizia cache e DerivedData iniziale
+      - name: Clean DerivedData
+        script: rm -rf ~/Library/Developer/Xcode/DerivedData/*
+
       # 1️⃣ Installa dipendenze npm
       - name: Install npm dependencies
         script: npm install
@@ -22,7 +26,7 @@ workflows:
       - name: Capacitor sync
         script: npx cap sync ios
 
-      # 3️⃣ Rimuovi VisionOS da WebRTC
+      # 3️⃣ Rimuovi VisionOS da WebRTC Package.swift
       - name: Remove VisionOS from WebRTC Package.swift
         script: |
           PACKAGE_PATH="ios/App/CapApp-SPM/Package.swift"
@@ -31,25 +35,21 @@ workflows:
             sed -i '' '/\.visionOS/d' "$PACKAGE_PATH"
           fi
 
-      # 4️⃣ Debug progetto
+      # 4️⃣ Risolvi Swift Packages
+      - name: Resolve Swift packages
+        script: xcodebuild -resolvePackageDependencies -project "$XCODE_PROJECT"
+
+      # 5️⃣ Debug progetto (opzionale)
       - name: Debug - verify project state
         script: |
           echo "=== Package.swift ==="
           cat ios/App/CapApp-SPM/Package.swift
           echo "=== WebRTCExport.swift ==="
           cat ios/App/CapApp-SPM/Sources/CapApp-SPM/WebRTCExport.swift || echo "MISSING"
-          echo "=== CameraMatrixWebRTCViewController in pbxproj ==="
-          grep -n "CameraMatrixWebRTC" ios/App/App.xcodeproj/project.pbxproj || echo "NOT FOUND in pbxproj"
-          echo "=== xcodebuild showBuildSettings (raw) ==="
-          xcodebuild -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -showBuildSettings 2>&1 | tail -30 || true
 
-      # 5️⃣ Configura firma codice
+      # 6️⃣ Configura firma codice
       - name: Set up code signing
         script: xcode-project use-profiles
-
-      # 6️⃣ Pulizia DerivedData
-      - name: Clean DerivedData
-        script: rm -rf ~/Library/Developer/Xcode/DerivedData/*
 
       # 7️⃣ Build IPA
       - name: Build iOS IPA
