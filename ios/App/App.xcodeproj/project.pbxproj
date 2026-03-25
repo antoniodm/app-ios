@@ -175,7 +175,7 @@
 				BB00000100020000ABCD0001 /* ExoPlayerPlugin.swift in Sources */,
 				BB00000100040000ABCD0001 /* CameraMatrixViewController.swift in Sources */,
 				BB00000100060000ABCD0001 /* MainViewController.swift in Sources */,
-			BB00000100080000ABCD0001 /* CameraMatrixWebRTCViewController.swift in Sources */,
+				BB00000100080000ABCD0001 /* CameraMatrixWebRTCViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
