@@ -101,6 +101,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
     private var peerConnections: [RTCPeerConnection?] = []
     private var delegates: [WhepDelegate?] = []
     fileprivate var frameSinks: [FrameSink?] = []
+    fileprivate var videoTracks: [RTCVideoTrack?] = []
     private var rendererViews: [RTCMTLVideoView?] = []
     private var wrapperViews: [UIView?] = []
     private var statusLabels: [UILabel?] = []
@@ -153,6 +154,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
         peerConnections = Array(repeating: nil,   count: count)
         delegates       = Array(repeating: nil,   count: count)
         frameSinks      = Array(repeating: nil,   count: count)
+        videoTracks     = Array(repeating: nil,   count: count)
         rendererViews   = Array(repeating: nil,   count: count)
         wrapperViews    = Array(repeating: nil,   count: count)
         statusLabels    = Array(repeating: nil,   count: count)
@@ -414,6 +416,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
                     glog("Cam \(idx): video track = \(rawTrack != nil ? "OK" : "NIL")")
                     if let track = rawTrack as? RTCVideoTrack {
                         foundVideoTrack = true
+                        self.videoTracks[idx] = track  // mantieni vivo il wrapper
                         let sink = FrameSink(idx: idx, vc: self)
                         self.frameSinks[idx] = sink
                         track.add(sink)
@@ -689,6 +692,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
         // evita che i callback post-close accedano ad array già svuotati
         delegates.removeAll()
         frameSinks.removeAll()
+        videoTracks.removeAll()
         for i in 0..<peerConnections.count { peerConnections[i]?.close() }
         for obs in avObservers { if let o = obs { NotificationCenter.default.removeObserver(o) } }
         avPlayers.forEach { $0?.pause() }
@@ -746,6 +750,7 @@ private class WhepDelegate: NSObject, RTCPeerConnectionDelegate {
         vc?.updateStatus(idx, row: 1, "rtpReceiver fired OK")
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            self.vc?.videoTracks[self.idx] = track  // mantieni vivo il wrapper
             let sink = FrameSink(idx: self.idx, vc: self.vc)
             self.vc?.frameSinks[self.idx] = sink
             track.add(sink)
@@ -767,6 +772,7 @@ private class WhepDelegate: NSObject, RTCPeerConnectionDelegate {
                     if transceiver.mediaType == .video,
                        let track = transceiver.receiver.track as? RTCVideoTrack {
                         glog("Cam \(self.idx): riattacco sink+renderer su .connected")
+                        vc.videoTracks[self.idx] = track  // mantieni vivo il wrapper
                         let sink = FrameSink(idx: self.idx, vc: vc)
                         vc.frameSinks[self.idx] = sink
                         track.add(sink)
