@@ -61,13 +61,33 @@ private let _logger = Logger(
     category: "webrtc"
 )
 
+// MARK: - In-app log panel
+
+private final class InAppLogger {
+    static let shared = InAppLogger()
+    private let queue = DispatchQueue(label: "guardroom.inapplog", qos: .utility)
+    private var lines: [String] = []
+    private let maxLines = 40
+    weak var textView: UITextView?
+
+    func append(_ line: String) {
+        queue.async {
+            self.lines.append(line)
+            if self.lines.count > self.maxLines { self.lines.removeFirst() }
+            let text = self.lines.joined()
+            DispatchQueue.main.async { self.textView?.text = text }
+        }
+    }
+}
+
 private func glog(_ msg: String) {
     _ = _oslogSetup
     let ts = String(format: "%.3f", Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 100000))
-    let line = "[\(ts)] GUARDROOM \(msg)\n"
+    let line = "[\(ts)] \(msg)\n"
     _logger.debug("GUARDROOM \(msg, privacy: .public)")
     line.withCString { ptr in _ = write(STDERR_FILENO, ptr, strlen(ptr)) }
     FileLogger.shared.write(line)
+    InAppLogger.shared.append(line)
 }
 
 class CameraMatrixWebRTCViewController: UIViewController {
@@ -107,6 +127,8 @@ class CameraMatrixWebRTCViewController: UIViewController {
     private var scrollView: UIScrollView!
     private var contentView: UIView!
     private var closeButton: UIButton!
+    private var logPanel: UITextView!
+    private var logButton: UIButton!
     private var streamsButton: UIButton!
     private var hideTimer: Timer?
     private var watchdogTimer: Timer?
@@ -145,6 +167,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
 
         setupScrollView()
         setupControls()
+        setupLogPanel()
         updateColsRows()
 
         for i in 0..<count { createWebRTCSlot(at: i) }
@@ -189,6 +212,39 @@ class CameraMatrixWebRTCViewController: UIViewController {
         streamsButton.addTarget(self, action: #selector(showStreamsDialog), for: .touchUpInside)
         streamsButton.isHidden = true
         view.addSubview(streamsButton)
+    }
+
+    private func setupLogPanel() {
+        logPanel = UITextView()
+        logPanel.backgroundColor = UIColor.black.withAlphaComponent(0.85)
+        logPanel.textColor = .green
+        logPanel.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
+        logPanel.isEditable = false
+        logPanel.isHidden = true
+        logPanel.layer.cornerRadius = 8
+        view.addSubview(logPanel)
+        InAppLogger.shared.textView = logPanel
+
+        var cfg = UIButton.Configuration.filled()
+        cfg.title = "LOG"
+        cfg.baseForegroundColor = .white
+        cfg.baseBackgroundColor = UIColor.darkGray.withAlphaComponent(0.9)
+        cfg.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12)
+        logButton = UIButton(configuration: cfg)
+        logButton.layer.cornerRadius = 6
+        logButton.addTarget(self, action: #selector(toggleLog), for: .touchUpInside)
+        view.addSubview(logButton)
+    }
+
+    @objc private func toggleLog() {
+        logPanel.isHidden = !logPanel.isHidden
+        if !logPanel.isHidden {
+            let b = view.bounds.insetBy(dx: 12, dy: 80)
+            logPanel.frame = CGRect(x: b.minX, y: b.minY + 44, width: b.width, height: b.height * 0.6)
+            // scroll in fondo
+            let bottom = max(logPanel.contentSize.height - logPanel.bounds.height, 0)
+            logPanel.setContentOffset(CGPoint(x: 0, y: bottom), animated: false)
+        }
     }
 
     private func makeControlButton(_ title: String) -> UIButton {
@@ -485,6 +541,14 @@ class CameraMatrixWebRTCViewController: UIViewController {
             self.streamsButton.frame.origin = CGPoint(x: 16, y: 48)
             self.view.bringSubviewToFront(self.closeButton)
             self.view.bringSubviewToFront(self.streamsButton)
+            // logButton: angolo in basso a destra
+            self.logButton.sizeToFit()
+            self.logButton.frame.origin = CGPoint(
+                x: screenW - self.logButton.frame.width - 16,
+                y: self.view.bounds.height - self.logButton.frame.height - 40
+            )
+            self.view.bringSubviewToFront(self.logButton)
+            self.view.bringSubviewToFront(self.logPanel)
         }
     }
 
@@ -692,15 +756,35 @@ private class WhepDelegate: NSObject, RTCPeerConnectionDelegate {
         glog("Cam \(self.idx): connectionState=\(newState.rawValue)")
         vc?.updateStatus(idx, row: 0, "conn=\(newState.rawValue)")
         if newState == .connected {
-            // Riattacca renderer quando ICE è davvero connesso
+            // Riattacca sink+renderer su .connected (DTLS pronto)
             DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
+                guard let self = self, let vc = self.vc else { return }
                 for transceiver in peerConnection.transceivers {
                     if transceiver.mediaType == .video,
                        let track = transceiver.receiver.track as? RTCVideoTrack {
-                        glog("Cam \(self.idx): riattacco renderer su .connected")
+                        glog("Cam \(self.idx): riattacco sink+renderer su .connected")
+                        let sink = FrameSink(idx: self.idx, vc: vc)
+                        vc.frameSinks[self.idx] = sink
+                        track.add(sink)
                         track.add(self.renderer)
                         track.isEnabled = true
+                        vc.updateStatus(self.idx, row: 1, "sink+rend su connected")
+                    }
+                }
+            }
+            // Controlla bytes ricevuti dopo 3s
+            DispatchQueue.global().asyncAfter(deadline: .now() + 3) { [weak self] in
+                guard let self = self else { return }
+                peerConnection.statistics { report in
+                    for (_, stats) in report.statistics {
+                        if stats.type == "inbound-rtp",
+                           let kind = stats.values["kind"] as? String, kind == "video",
+                           let bytes = stats.values["bytesReceived"] as? UInt64,
+                           let packets = stats.values["packetsReceived"] as? UInt32 {
+                            let msg = "RTP video: \(bytes)B \(packets)pkt"
+                            glog("Cam \(self.idx): \(msg)")
+                            self.vc?.updateStatus(self.idx, row: 2, msg)
+                        }
                     }
                 }
             }
