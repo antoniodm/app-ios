@@ -14,69 +14,53 @@ workflows:
       node: latest
 
     scripts:
-      - name: Clean DerivedData
-        script: rm -rf ~/Library/Developer/Xcode/DerivedData/*
-
-      # 1️⃣ Installa dipendenze npm
       - name: Install npm dependencies
         script: npm install
 
-      # 2️⃣ Sincronizza Capacitor per iOS
       - name: Capacitor sync
         script: npx cap sync ios
 
-      # 3️⃣ Rimuovo VisionOS dal Package.swift
-      - name: Remove VisionOS from Package.swift
+      - name: Add WebRTC to CapApp-SPM
         script: |
-          PACKAGE_PATH="ios/App/CapApp-SPM/Package.swift"
-          if [ -f "$PACKAGE_PATH" ]; then
-            echo "Rimuovo target VisionOS dal Package.swift..."
-            sed -i '' '/\.visionOS/d' "$PACKAGE_PATH"
-          fi
+          python3 - << 'PYEOF'
+          path = 'ios/App/CapApp-SPM/Package.swift'
+          c = open(path).read()
+          if 'WebRTCFixed' not in c:
+              c = c.replace(
+                  '    dependencies: [',
+                  '    dependencies: [\n        .package(name: "WebRTC", path: "../WebRTCFixed"),',
+                  1
+              )
+              first = c.index('.product(name: "Capacitor"')
+              c = c[:first] + '.product(name: "WebRTC", package: "WebRTC"),\n                ' + c[first:]
+              open(path, 'w').write(c)
+              print('WebRTC (WebRTCFixed locale) aggiunto a Package.swift')
+          else:
+              print('WebRTC gia presente in Package.swift')
+          PYEOF
+          cat > ios/App/CapApp-SPM/Sources/CapApp-SPM/WebRTCExport.swift << 'SWIFTEOF'
+          @_exported import WebRTC
+          SWIFTEOF
 
-      # 4️⃣ Risolvo pacchetti Swift
-      - name: Resolve Swift packages
-        script: xcodebuild -resolvePackageDependencies -project "$XCODE_PROJECT"
-
-      # 5️⃣ Debug progetto (opzionale)
       - name: Debug - verify project state
         script: |
           echo "=== Package.swift ==="
           cat ios/App/CapApp-SPM/Package.swift
+          echo "=== WebRTCExport.swift ==="
+          cat ios/App/CapApp-SPM/Sources/CapApp-SPM/WebRTCExport.swift || echo "MISSING"
+          echo "=== CameraMatrixWebRTC in pbxproj ==="
+          grep -n "CameraMatrixWebRTC" ios/App/App.xcodeproj/project.pbxproj || echo "NOT FOUND"
           echo "=== xcodebuild showBuildSettings ==="
-          xcodebuild -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -showBuildSettings 2>&1 | tail -30 || true
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -showBuildSettings 2>&1 | tail -20 || true
 
-      # 6️⃣ Configura firma codice
       - name: Set up code signing
         script: xcode-project use-profiles
 
-      # 7️⃣ Build IPA
       - name: Build iOS IPA
         script: |
-          #!/usr/bin/env bash
-          set -e
-          echo "Building $XCODE_PROJECT scheme $XCODE_SCHEME"
-
-          # Pulizia
-          xcodebuild clean \
-            -project "$XCODE_PROJECT" \
-            -scheme "$XCODE_SCHEME" \
-            -configuration Release
-
-          # Archiviazione
-          xcodebuild archive \
-            -project "$XCODE_PROJECT" \
-            -scheme "$XCODE_SCHEME" \
-            -archivePath "$PWD/build/App.xcarchive" \
-            -configuration Release \
-            -allowProvisioningUpdates \
-            -destination 'generic/platform=iOS'
-
-          # Export IPA
-          xcodebuild -exportArchive \
-            -archivePath "$PWD/build/App.xcarchive" \
-            -exportOptionsPlist ios/App/ExportOptions.plist \
-            -exportPath "$PWD/build/ios/ipa"
+          xcode-project build-ipa \
+            --project "$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME"
 
     artifacts:
       - build/ios/ipa/*.ipa
