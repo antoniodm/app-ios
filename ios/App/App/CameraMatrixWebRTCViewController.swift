@@ -83,8 +83,9 @@ private final class InAppLogger {
 private func glog(_ msg: String) {
     _ = _oslogSetup
     let ts = String(format: "%.3f", Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 100000))
-    let line = "[\(ts)] \(msg)\n"
-    _logger.debug("GUARDROOM \(msg, privacy: .public)")
+    let line = "[\(ts)] GUARDROOM \(msg)\n"
+    // .info è visibile con: log stream --device --predicate 'subsystem == "com.octopusiot.example"'
+    _logger.info("GUARDROOM \(msg, privacy: .public)")
     line.withCString { ptr in _ = write(STDERR_FILENO, ptr, strlen(ptr)) }
     FileLogger.shared.write(line)
     InAppLogger.shared.append(line)
