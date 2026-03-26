@@ -126,13 +126,16 @@ class CameraMatrixViewController: UIViewController {
     }
 
     private func makeControlButton(_ title: String) -> UIButton {
-        let btn = UIButton(type: .custom)
-        btn.setTitle(title, for: .normal)
-        btn.titleLabel?.font = .systemFont(ofSize: 18, weight: .medium)
-        btn.setTitleColor(.white, for: .normal)
-        btn.backgroundColor = UIColor.black.withAlphaComponent(0.8)
+        var config = UIButton.Configuration.filled()
+        config.title = title
+        config.baseForegroundColor = .white
+        config.baseBackgroundColor = UIColor.black.withAlphaComponent(0.8)
+        config.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 24, bottom: 12, trailing: 24)
+        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attrs in
+            var a = attrs; a.font = .systemFont(ofSize: 18, weight: .medium); return a
+        }
+        let btn = UIButton(configuration: config)
         btn.layer.cornerRadius = 8
-        btn.contentEdgeInsets = UIEdgeInsets(top: 12, left: 24, bottom: 12, right: 24)
         return btn
     }
 
