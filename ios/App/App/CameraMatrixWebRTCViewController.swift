@@ -4,8 +4,8 @@ import CapApp_SPM
 import Darwin
 
 private func glog(_ msg: String) {
-    var m = "GUARDROOM " + msg + "\n"
-    m.withCString { fputs($0, stderr) }
+    let m = "GUARDROOM " + msg
+    m.withCString { syslog(LOG_ERR, "%s", $0) }
 }
 
 class CameraMatrixWebRTCViewController: UIViewController {
