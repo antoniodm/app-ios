@@ -61,6 +61,44 @@ private let _logger = Logger(
     category: "webrtc"
 )
 
+// MARK: - UDP log broadcaster
+// Sul Mac/Linux: nc -ul 9999
+
+private final class UDPLogger {
+    static let shared = UDPLogger()
+    private let queue = DispatchQueue(label: "guardroom.udplog", qos: .utility)
+    private var sock: Int32 = -1
+    private let port: UInt16 = 9999
+
+    private init() {
+        queue.async { self.open() }
+    }
+
+    private func open() {
+        sock = socket(AF_INET, SOCK_DGRAM, 0)
+        guard sock >= 0 else { return }
+        var yes: Int32 = 1
+        setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &yes, socklen_t(MemoryLayout<Int32>.size))
+    }
+
+    func send(_ line: String) {
+        guard sock >= 0 else { return }
+        queue.async {
+            var addr = sockaddr_in()
+            addr.sin_family = sa_family_t(AF_INET)
+            addr.sin_port = self.port.bigEndian
+            addr.sin_addr.s_addr = INADDR_BROADCAST  // 255.255.255.255
+            line.withCString { ptr in
+                withUnsafePointer(to: &addr) {
+                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                        _ = sendto(self.sock, ptr, strlen(ptr), 0, sa, socklen_t(MemoryLayout<sockaddr_in>.size))
+                    }
+                }
+            }
+        }
+    }
+}
+
 // MARK: - In-app log panel
 
 private final class InAppLogger {
@@ -89,6 +127,7 @@ private func glog(_ msg: String) {
     line.withCString { ptr in _ = write(STDERR_FILENO, ptr, strlen(ptr)) }
     FileLogger.shared.write(line)
     InAppLogger.shared.append(line)
+    UDPLogger.shared.send(line)
 }
 
 class CameraMatrixWebRTCViewController: UIViewController {
