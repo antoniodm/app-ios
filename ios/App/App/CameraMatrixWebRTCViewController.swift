@@ -1,6 +1,9 @@
 import UIKit
 import AVFoundation
 import CapApp_SPM
+import os.log
+
+private let logger = Logger(subsystem: "com.octopusiot.example", category: "WebRTC")
 
 class CameraMatrixWebRTCViewController: UIViewController {
 
@@ -149,11 +152,12 @@ class CameraMatrixWebRTCViewController: UIViewController {
             guard let self = self else { return }
             for attempt in 1...self.maxRetries {
                 guard self.enabled[idx] else { return }
-                NSLog("GUARDROOM Cam %d: WHEP tentativo %d", idx, attempt)
+                logger.info("GUARDROOM Cam \(idx, privacy: .public): WHEP tentativo \(attempt, privacy: .public)")
                 if self.doWhep(url: url, idx: idx) { return }
                 if attempt < self.maxRetries { Thread.sleep(forTimeInterval: 3) }
             }
-            NSLog("GUARDROOM Cam %d: tutti i tentativi WHEP esauriti", idx)
+            logger.info("GUARDROOM Cam \(idx, privacy: .public): tutti tentativi WHEP esauriti → HLS")
+            self.switchToHls(idx: idx)
         }
     }
 
@@ -210,7 +214,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
         sem3.wait()
 
         guard (statusCode == 200 || statusCode == 201), let sdp = answerSdp else {
-            NSLog("GUARDROOM Cam %d: WHEP risposta %d", idx, statusCode)
+            logger.info("GUARDROOM Cam \(idx, privacy: .public): WHEP risposta HTTP \(statusCode, privacy: .public)")
             pc.close(); return false
         }
 
@@ -219,7 +223,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
         sem4.wait()
 
         peerConnections[idx] = pc
-        NSLog("GUARDROOM Cam %d: WHEP connesso", idx)
+        logger.info("GUARDROOM Cam \(idx, privacy: .public): WHEP connesso OK")
         return true
     }
 
@@ -227,7 +231,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
 
     fileprivate func switchToHls(idx: Int) {
         guard enabled[idx] else { return }
-        NSLog("GUARDROOM Cam %d: switch a AVPlayer HLS", idx)
+        logger.info("GUARDROOM Cam \(idx, privacy: .public): switch a AVPlayer HLS")
         peerConnections[idx]?.close()
         peerConnections[idx] = nil
         rendererViews[idx] = nil
@@ -295,7 +299,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
             let active = (0..<self.streamUrls.count).filter {
                 self.enabled[$0] && self.wrapperViews[$0] != nil
             }
-            NSLog("GUARDROOM buildGrid: %d attivi, griglia %dx%d", active.count, self.cols, self.rows)
+            logger.info("GUARDROOM buildGrid: \(active.count, privacy: .public) attivi, griglia \(self.cols, privacy: .public)x\(self.rows, privacy: .public)")
 
             var pos = 0; var yOffset: CGFloat = 0
             for _ in 0..<self.rows {
@@ -401,7 +405,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
         for i in 0..<enabled.count {
             guard enabled[i], !isHlsFallback[i], lastFrameTime[i] > 0,
                   now - lastFrameTime[i] > 10 else { continue }
-            NSLog("GUARDROOM Cam %d: freeze %ds → restart WebRTC", i, Int(now - lastFrameTime[i]))
+            logger.info("GUARDROOM Cam \(i, privacy: .public): freeze → restart WebRTC")
             restartWhep(i)
         }
     }
@@ -484,7 +488,7 @@ private class WhepDelegate: NSObject, RTCPeerConnectionDelegate {
                         didAdd rtpReceiver: RTCRtpReceiver,
                         streams: [RTCMediaStream]) {
         guard let track = rtpReceiver.track as? RTCVideoTrack else { return }
-        NSLog("GUARDROOM Cam %d: VideoTrack ricevuta", idx)
+        logger.info("GUARDROOM Cam \(idx, privacy: .public): VideoTrack ricevuta")
         let sink = FrameSink(idx: idx, vc: vc)
         track.add(sink)
         DispatchQueue.main.async { track.add(self.renderer) }
@@ -492,9 +496,9 @@ private class WhepDelegate: NSObject, RTCPeerConnectionDelegate {
 
     func peerConnection(_ peerConnection: RTCPeerConnection,
                         didChange newState: RTCPeerConnectionState) {
-        NSLog("GUARDROOM Cam %d: connectionState=%ld", idx, newState.rawValue)
+        logger.info("GUARDROOM Cam \(idx, privacy: .public): connectionState=\(newState.rawValue, privacy: .public)")
         if newState == .failed {
-            NSLog("GUARDROOM Cam %d: connessione fallita → restart in 3s", idx)
+            logger.info("GUARDROOM Cam \(idx, privacy: .public): connessione fallita → restart in 3s")
             DispatchQueue.global().asyncAfter(deadline: .now() + 3) { [weak self] in
                 guard let self = self, let vc = self.vc, vc.enabled[self.idx] else { return }
                 vc.restartWhep(self.idx)
