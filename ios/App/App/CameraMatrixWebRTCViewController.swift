@@ -10,6 +10,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
     // Stato per ogni stream
     var enabled: [Bool] = []
     private var peerConnections: [RTCPeerConnection?] = []
+    private var delegates: [WhepDelegate?] = []
     private var rendererViews: [RTCMTLVideoView?] = []
     private var wrapperViews: [UIView?] = []
     // Fallback AVPlayer per H.265 (stesso schema Android)
@@ -54,6 +55,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
         let count = streamUrls.count
         enabled         = Array(repeating: true,  count: count)
         peerConnections = Array(repeating: nil,   count: count)
+        delegates       = Array(repeating: nil,   count: count)
         rendererViews   = Array(repeating: nil,   count: count)
         wrapperViews    = Array(repeating: nil,   count: count)
         avPlayers       = Array(repeating: nil,   count: count)
@@ -165,6 +167,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
         config.rtcpMuxPolicy = .require
 
         let delegate = WhepDelegate(idx: idx, vc: self, renderer: renderer)
+        delegates[idx] = delegate
         guard let pc = Self.factory.peerConnection(
             with: config,
             constraints: RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil),
@@ -364,6 +367,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
         guard enabled[i] else { return }
         enabled[i] = false
         peerConnections[i]?.close(); peerConnections[i] = nil
+        delegates[i] = nil
         rendererViews[i] = nil
         if let obs = avObservers[i] { NotificationCenter.default.removeObserver(obs) }
         avObservers[i] = nil
@@ -405,6 +409,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
     fileprivate func restartWhep(_ i: Int) {
         guard enabled[i] else { return }
         peerConnections[i]?.close(); peerConnections[i] = nil
+        delegates[i] = nil
         videoW[i] = 0; videoH[i] = 0; lastFrameTime[i] = 0
 
         let renderer = RTCMTLVideoView(frame: .zero)
@@ -452,6 +457,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
         avPlayers.forEach { $0?.pause() }
         avLayers.forEach { $0?.removeFromSuperlayer() }
         peerConnections.removeAll()
+        delegates.removeAll()
         rendererViews.removeAll()
         wrapperViews.removeAll()
         avPlayers.removeAll()
