@@ -3,10 +3,8 @@ import AVFoundation
 import CapApp_SPM
 import os
 
-private let _log = OSLog(subsystem: "com.octopusiot.example", category: "webrtc")
-
 private func glog(_ msg: String) {
-    os_log("GUARDROOM %{public}@", log: _log, type: .info, msg)
+    os_log("GUARDROOM %{public}@", type: .default, msg)
 }
 
 class CameraMatrixWebRTCViewController: UIViewController {
