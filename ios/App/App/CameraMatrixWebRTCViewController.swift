@@ -33,7 +33,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
         RTCInitializeSSL()
         return RTCPeerConnectionFactory(
             encoderFactory: RTCDefaultVideoEncoderFactory(),
-            decoderFactory: RTCDefaultVideoDecoderFactory()
+            decoderFactory: H265VideoDecoderFactory()
         )
     }()
 
@@ -474,6 +474,27 @@ class CameraMatrixWebRTCViewController: UIViewController {
     }
 
     deinit { releaseAll() }
+}
+
+// MARK: - H.265 decoder factory
+
+private class H265VideoDecoderFactory: NSObject, RTCVideoDecoderFactory {
+    private let base = RTCDefaultVideoDecoderFactory()
+
+    func createDecoder(_ info: RTCVideoCodecInfo) -> RTCVideoDecoder? {
+        if info.name == RTCVideoCodecH265Name {
+            return RTCVideoDecoderH265()
+        }
+        return base.createDecoder(info)
+    }
+
+    func supportedCodecs() -> [RTCVideoCodecInfo] {
+        var codecs = base.supportedCodecs()
+        if !codecs.contains(where: { $0.name == RTCVideoCodecH265Name }) {
+            codecs.insert(RTCVideoCodecInfo(name: RTCVideoCodecH265Name), at: 0)
+        }
+        return codecs
+    }
 }
 
 // MARK: - RTCPeerConnectionDelegate
