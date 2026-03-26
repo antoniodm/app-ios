@@ -488,17 +488,17 @@ private class WhepDelegate: NSObject, RTCPeerConnectionDelegate {
                         didAdd rtpReceiver: RTCRtpReceiver,
                         streams: [RTCMediaStream]) {
         guard let track = rtpReceiver.track as? RTCVideoTrack else { return }
-        logger.info("GUARDROOM Cam \(idx, privacy: .public): VideoTrack ricevuta")
-        let sink = FrameSink(idx: idx, vc: vc)
+        logger.info("GUARDROOM Cam \(self.idx, privacy: .public): VideoTrack ricevuta")
+        let sink = FrameSink(idx: self.idx, vc: vc)
         track.add(sink)
         DispatchQueue.main.async { track.add(self.renderer) }
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection,
                         didChange newState: RTCPeerConnectionState) {
-        logger.info("GUARDROOM Cam \(idx, privacy: .public): connectionState=\(newState.rawValue, privacy: .public)")
+        logger.info("GUARDROOM Cam \(self.idx, privacy: .public): connectionState=\(newState.rawValue, privacy: .public)")
         if newState == .failed {
-            logger.info("GUARDROOM Cam \(idx, privacy: .public): connessione fallita → restart in 3s")
+            logger.info("GUARDROOM Cam \(self.idx, privacy: .public): connessione fallita → restart in 3s")
             DispatchQueue.global().asyncAfter(deadline: .now() + 3) { [weak self] in
                 guard let self = self, let vc = self.vc, vc.enabled[self.idx] else { return }
                 vc.restartWhep(self.idx)
