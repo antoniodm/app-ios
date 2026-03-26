@@ -83,6 +83,8 @@ class CameraMatrixWebRTCViewController: UIViewController {
     private var rendererViews: [RTCMTLVideoView?] = []
     private var wrapperViews: [UIView?] = []
     private var statusLabels: [UILabel?] = []
+    // 3 righe indipendenti: [0]=rete, [1]=track, [2]=frame
+    private var statusLines: [[String]] = []
     // Fallback AVPlayer per H.265 (stesso schema Android)
     private var avPlayers: [AVPlayer?] = []
     private var avLayers: [AVPlayerLayer?] = []
@@ -131,6 +133,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
         rendererViews   = Array(repeating: nil,   count: count)
         wrapperViews    = Array(repeating: nil,   count: count)
         statusLabels    = Array(repeating: nil,   count: count)
+        statusLines     = Array(repeating: ["","",""], count: count)
         avPlayers       = Array(repeating: nil,   count: count)
         avLayers        = Array(repeating: nil,   count: count)
         avObservers     = Array(repeating: nil,   count: count)
@@ -239,9 +242,13 @@ class CameraMatrixWebRTCViewController: UIViewController {
         startWhep(url: streamUrls[i], idx: i)
     }
 
-    fileprivate func updateStatus(_ i: Int, _ text: String) {
+    // row: 0=rete, 1=track, 2=frame
+    fileprivate func updateStatus(_ i: Int, row: Int = 0, _ text: String) {
         DispatchQueue.main.async { [weak self] in
-            self?.statusLabels[i]?.text = "[\(i)] \(text)"
+            guard let self = self else { return }
+            self.statusLines[i][row] = text
+            let body = self.statusLines[i].filter { !$0.isEmpty }.joined(separator: "\n")
+            self.statusLabels[i]?.text = "[\(i)]\n\(body)"
         }
     }
 
@@ -252,13 +259,13 @@ class CameraMatrixWebRTCViewController: UIViewController {
             guard let self = self else { return }
             for attempt in 1...self.maxRetries {
                 guard self.enabled[idx] else { return }
-                self.updateStatus(idx, "WHEP tentativo \(attempt)")
+                self.updateStatus(idx, row: 0, "WHEP tentativo \(attempt)")
                 glog("Cam \(idx): WHEP tentativo \(attempt)")
                 if self.doWhep(url: url, idx: idx) { return }
                 if attempt < self.maxRetries { Thread.sleep(forTimeInterval: 3) }
             }
             glog("Cam \(idx): tutti tentativi WHEP esauriti -> HLS")
-            self.updateStatus(idx, "WHEP fallito -> HLS")
+            self.updateStatus(idx, row: 0, "WHEP fallito -> HLS")
             self.switchToHls(idx: idx)
         }
     }
@@ -317,11 +324,11 @@ class CameraMatrixWebRTCViewController: UIViewController {
 
         guard (statusCode == 200 || statusCode == 201), let sdp = answerSdp else {
             glog("Cam \(idx): WHEP risposta HTTP \(statusCode)")
-            updateStatus(idx, "HTTP \(statusCode)")
+            updateStatus(idx, row: 0, "HTTP \(statusCode)")
             pc.close(); return false
         }
 
-        updateStatus(idx, "SDP OK, ICE...")
+        updateStatus(idx, row: 0, "SDP OK, ICE...")
 
         let sem4 = DispatchSemaphore(value: 0)
         pc.setRemoteDescription(RTCSessionDescription(type: .answer, sdp: sdp)) { _ in sem4.signal() }
@@ -330,16 +337,31 @@ class CameraMatrixWebRTCViewController: UIViewController {
         // Collega renderer direttamente dal transceiver (bypass callback)
         let capturedRenderer = renderer
         DispatchQueue.main.async {
-            for transceiver in pc.transceivers {
-                if transceiver.mediaType == .video,
-                   let track = transceiver.receiver.track as? RTCVideoTrack {
-                    glog("Cam \(idx): attacco renderer via transceiver")
-                    let sink = FrameSink(idx: idx, vc: self)
-                    self.frameSinks[idx] = sink
-                    track.add(sink)
-                    track.add(capturedRenderer)
-                    track.isEnabled = true
+            let transceivers = pc.transceivers
+            glog("Cam \(idx): \(transceivers.count) transceivers dopo setRemote")
+            var foundVideoTrack = false
+            for transceiver in transceivers {
+                if transceiver.mediaType == .video {
+                    let rawTrack = transceiver.receiver.track
+                    glog("Cam \(idx): video track = \(rawTrack != nil ? "OK" : "NIL")")
+                    if let track = rawTrack as? RTCVideoTrack {
+                        foundVideoTrack = true
+                        let sink = FrameSink(idx: idx, vc: self)
+                        self.frameSinks[idx] = sink
+                        track.add(sink)
+                        track.add(capturedRenderer)
+                        track.isEnabled = true
+                        self.updateStatus(idx, row: 1, "track OK (transceiver)")
+                        glog("Cam \(idx): sink+renderer attaccati via transceiver")
+                    } else {
+                        self.updateStatus(idx, row: 1, "track NIL dopo setRemote!")
+                        glog("Cam \(idx): ERRORE track NIL dopo setRemoteDescription")
+                    }
                 }
+            }
+            if !foundVideoTrack {
+                self.updateStatus(idx, row: 1, "nessun video transceiver!")
+                glog("Cam \(idx): ERRORE nessun video transceiver trovato")
             }
         }
 
@@ -399,7 +421,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
         frameCount[idx] += 1
         if videoW[idx] == 0 { videoW[idx] = width; videoH[idx] = height }
         if frameCount[idx] == 1 || frameCount[idx] % 30 == 0 {
-            updateStatus(idx, "frames:\(frameCount[idx]) \(width)x\(height)")
+            updateStatus(idx, row: 2, "frames:\(frameCount[idx]) \(width)x\(height)")
         }
     }
 
@@ -642,7 +664,7 @@ private class WhepDelegate: NSObject, RTCPeerConnectionDelegate {
                         streams: [RTCMediaStream]) {
         guard let track = rtpReceiver.track as? RTCVideoTrack else { return }
         glog("Cam \(self.idx): VideoTrack ricevuta via didAdd rtpReceiver")
-        vc?.updateStatus(idx, "track ricevuta, attacco renderer")
+        vc?.updateStatus(idx, row: 1, "rtpReceiver fired OK")
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             let sink = FrameSink(idx: self.idx, vc: self.vc)
@@ -650,13 +672,14 @@ private class WhepDelegate: NSObject, RTCPeerConnectionDelegate {
             track.add(sink)
             track.add(self.renderer)
             track.isEnabled = true
+            self.vc?.updateStatus(self.idx, row: 1, "rtpReceiver+sink OK")
         }
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection,
                         didChange newState: RTCPeerConnectionState) {
         glog("Cam \(self.idx): connectionState=\(newState.rawValue)")
-        vc?.updateStatus(idx, "connState=\(newState.rawValue)")
+        vc?.updateStatus(idx, row: 0, "conn=\(newState.rawValue)")
         if newState == .connected {
             // Riattacca renderer quando ICE è davvero connesso
             DispatchQueue.main.async { [weak self] in
@@ -685,7 +708,7 @@ private class WhepDelegate: NSObject, RTCPeerConnectionDelegate {
         DispatchQueue.main.async {
             for track in stream.videoTracks {
                 glog("Cam \(self.idx): VideoTrack via didAdd stream")
-                self.vc?.updateStatus(self.idx, "track via stream, attacco")
+                self.vc?.updateStatus(self.idx, row: 1, "stream track OK")
                 track.add(self.renderer)
                 track.isEnabled = true
             }
@@ -695,7 +718,7 @@ private class WhepDelegate: NSObject, RTCPeerConnectionDelegate {
     func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
         glog("Cam \(self.idx): iceState=\(newState.rawValue)")
-        vc?.updateStatus(idx, "ICE=\(newState.rawValue)")
+        vc?.updateStatus(idx, row: 0, "ICE=\(newState.rawValue)")
     }
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {}
