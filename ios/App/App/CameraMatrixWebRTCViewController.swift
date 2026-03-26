@@ -100,7 +100,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
         RTCInitializeSSL()
         return RTCPeerConnectionFactory(
             encoderFactory: RTCDefaultVideoEncoderFactory(),
-            decoderFactory: H265VideoDecoderFactory()
+            decoderFactory: RTCDefaultVideoDecoderFactory()
         )
     }()
 
@@ -328,7 +328,18 @@ class CameraMatrixWebRTCViewController: UIViewController {
             pc.close(); return false
         }
 
-        updateStatus(idx, row: 0, "SDP OK, ICE...")
+        // Estrai codec video dall'SDP answer per debug
+        let codec = sdp.components(separatedBy: "\n")
+            .first(where: { $0.contains("a=rtpmap") && (
+                $0.lowercased().contains("h264") ||
+                $0.lowercased().contains("h265") ||
+                $0.lowercased().contains("hevc") ||
+                $0.lowercased().contains("vp8") ||
+                $0.lowercased().contains("vp9") ||
+                $0.lowercased().contains("av1")
+            )})?.trimmingCharacters(in: .whitespaces) ?? "codec?"
+        glog("Cam \(idx): codec SDP answer: \(codec)")
+        updateStatus(idx, row: 0, "SDP:\(codec)")
 
         let sem4 = DispatchSemaphore(value: 0)
         pc.setRemoteDescription(RTCSessionDescription(type: .answer, sdp: sdp)) { _ in sem4.signal() }
