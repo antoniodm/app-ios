@@ -4,7 +4,7 @@ import CapApp_SPM
 import os
 
 private func glog(_ msg: String) {
-    os_log("GUARDROOM %{public}@", type: .default, msg)
+    os_log("GUARDROOM %{public}@", type: .fault, msg)
 }
 
 class CameraMatrixWebRTCViewController: UIViewController {
