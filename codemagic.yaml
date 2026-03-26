@@ -48,10 +48,10 @@ workflows:
           cat ios/App/CapApp-SPM/Package.swift
           echo "=== WebRTCExport.swift ==="
           cat ios/App/CapApp-SPM/Sources/CapApp-SPM/WebRTCExport.swift || echo "MISSING"
-          echo "=== CameraMatrixWebRTC in pbxproj ==="
-          grep -n "CameraMatrixWebRTC" ios/App/App.xcodeproj/project.pbxproj || echo "NOT FOUND"
-          echo "=== xcodebuild showBuildSettings ==="
-          xcodebuild -project ios/App/App.xcodeproj -scheme App -showBuildSettings 2>&1 | tail -20 || true
+          echo "=== CameraMatrixWebRTCViewController in pbxproj ==="
+          grep -n "CameraMatrixWebRTC" ios/App/App.xcodeproj/project.pbxproj || echo "NOT FOUND in pbxproj"
+          echo "=== xcodebuild showBuildSettings (raw) ==="
+          xcodebuild -project ios/App/App.xcodeproj -scheme App -showBuildSettings 2>&1 | tail -30 || true
 
       - name: Set up code signing
         script: xcode-project use-profiles
