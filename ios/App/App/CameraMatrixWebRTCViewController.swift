@@ -683,13 +683,16 @@ class CameraMatrixWebRTCViewController: UIViewController {
     private func releaseAll() {
         hideTimer?.invalidate(); hideTimer = nil
         watchdogTimer?.invalidate(); watchdogTimer = nil
+        InAppLogger.shared.textView = nil
+        // Azzera i delegate PRIMA di chiudere le PC:
+        // evita che i callback post-close accedano ad array già svuotati
+        delegates.removeAll()
+        frameSinks.removeAll()
         for i in 0..<peerConnections.count { peerConnections[i]?.close() }
         for obs in avObservers { if let o = obs { NotificationCenter.default.removeObserver(o) } }
         avPlayers.forEach { $0?.pause() }
         avLayers.forEach { $0?.removeFromSuperlayer() }
         peerConnections.removeAll()
-        delegates.removeAll()
-        frameSinks.removeAll()
         rendererViews.removeAll()
         wrapperViews.removeAll()
         statusLabels.removeAll()
@@ -792,7 +795,8 @@ private class WhepDelegate: NSObject, RTCPeerConnectionDelegate {
         if newState == .failed {
             glog("Cam \(self.idx): connessione fallita -> restart in 3s")
             DispatchQueue.global().asyncAfter(deadline: .now() + 3) { [weak self] in
-                guard let self = self, let vc = self.vc, vc.enabled[self.idx] else { return }
+                guard let self = self, let vc = self.vc,
+                      self.idx < vc.enabled.count, vc.enabled[self.idx] else { return }
                 vc.restartWhep(self.idx)
             }
         }
