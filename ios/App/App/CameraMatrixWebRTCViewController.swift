@@ -225,6 +225,19 @@ class CameraMatrixWebRTCViewController: UIViewController {
         pc.setRemoteDescription(RTCSessionDescription(type: .answer, sdp: sdp)) { _ in sem4.signal() }
         sem4.wait()
 
+        // Collega renderer direttamente dal transceiver (bypass callback)
+        let capturedRenderer = renderer
+        DispatchQueue.main.async {
+            for transceiver in pc.transceivers {
+                if transceiver.mediaType == .video,
+                   let track = transceiver.receiver.track as? RTCVideoTrack {
+                    glog("Cam \(idx): attacco renderer via transceiver")
+                    track.add(capturedRenderer)
+                    track.isEnabled = true
+                }
+            }
+        }
+
         peerConnections[idx] = pc
         glog("Cam \(idx): WHEP connesso OK")
         return true
@@ -531,7 +544,15 @@ private class WhepDelegate: NSObject, RTCPeerConnectionDelegate {
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {}
+    func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {
+        DispatchQueue.main.async {
+            for track in stream.videoTracks {
+                glog("Cam \(self.idx): VideoTrack via didAdd stream")
+                track.add(self.renderer)
+                track.isEnabled = true
+            }
+        }
+    }
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
     func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {}
