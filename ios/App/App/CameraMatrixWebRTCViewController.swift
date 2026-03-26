@@ -8,7 +8,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
     var streamNames: [String] = []
 
     // Stato per ogni stream
-    private var enabled: [Bool] = []
+    var enabled: [Bool] = []
     private var peerConnections: [RTCPeerConnection?] = []
     private var rendererViews: [RTCMTLVideoView?] = []
     private var wrapperViews: [UIView?] = []
