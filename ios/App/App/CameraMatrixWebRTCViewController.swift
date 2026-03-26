@@ -775,18 +775,21 @@ private class WhepDelegate: NSObject, RTCPeerConnectionDelegate {
                     }
                 }
             }
-            // Controlla bytes ricevuti dopo 3s
+            // Controlla stats decoder dopo 3s
             DispatchQueue.global().asyncAfter(deadline: .now() + 3) { [weak self] in
                 guard let self = self else { return }
                 peerConnection.statistics { report in
                     for (_, stats) in report.statistics {
                         if stats.type == "inbound-rtp",
-                           let kind = stats.values["kind"] as? String, kind == "video",
-                           let bytes = stats.values["bytesReceived"] as? UInt64,
-                           let packets = stats.values["packetsReceived"] as? UInt32 {
-                            let msg = "RTP video: \(bytes)B \(packets)pkt"
-                            glog("Cam \(self.idx): \(msg)")
-                            self.vc?.updateStatus(self.idx, row: 2, msg)
+                           let kind = stats.values["kind"] as? String, kind == "video" {
+                            let bytes   = stats.values["bytesReceived"]   as? UInt64 ?? 0
+                            let packets = stats.values["packetsReceived"] as? UInt32 ?? 0
+                            let framesRx  = stats.values["framesReceived"]  as? UInt32 ?? 9999
+                            let framesDec = stats.values["framesDecoded"]   as? UInt32 ?? 9999
+                            let lost      = stats.values["packetsLost"]     as? Int32  ?? 0
+                            let msg = "\(bytes)B \(packets)pkt lost:\(lost) framesRx:\(framesRx) dec:\(framesDec)"
+                            glog("Cam \(self.idx): stats \(msg)")
+                            self.vc?.updateStatus(self.idx, row: 0, "stats:\(msg)")
                         }
                     }
                 }
