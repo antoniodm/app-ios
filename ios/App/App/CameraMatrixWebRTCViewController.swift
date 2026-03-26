@@ -2,10 +2,72 @@ import UIKit
 import AVFoundation
 import CapApp_SPM
 import Darwin
+import os
+
+// MARK: - File logger (leggibile via ifuse/AFC dalla sandbox)
+
+private final class FileLogger {
+    static let shared = FileLogger()
+    private let queue = DispatchQueue(label: "guardroom.filelog", qos: .utility)
+    private var handle: FileHandle?
+    private let maxBytes = 2 * 1024 * 1024  // 2 MB poi ruota
+
+    private init() {
+        queue.async { self.open() }
+    }
+
+    private func logPath() -> URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return docs.appendingPathComponent("guardroom_webrtc.log")
+    }
+
+    private func open() {
+        let url = logPath()
+        if !FileManager.default.fileExists(atPath: url.path) {
+            FileManager.default.createFile(atPath: url.path, contents: nil)
+        }
+        handle = try? FileHandle(forWritingTo: url)
+        handle?.seekToEndOfFile()
+    }
+
+    func write(_ msg: String) {
+        queue.async {
+            guard let h = self.handle else { return }
+            // Ruota se troppo grande
+            let pos = h.offsetInFile
+            if pos > UInt64(self.maxBytes) {
+                h.truncateFile(atOffset: 0)
+                h.seek(toFileOffset: 0)
+            }
+            if let data = msg.data(using: .utf8) { h.write(data) }
+        }
+    }
+
+    /// Percorso del file da mostrare all'utente
+    static func logFilePath() -> String {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return docs.appendingPathComponent("guardroom_webrtc.log").path
+    }
+}
+
+// Forza os_log su stderr prima che il sistema di logging si inizializzi
+private let _oslogSetup: Void = {
+    setenv("OS_ACTIVITY_MODE", "disable", 1)
+    setenv("OS_LOG_ENABLE_STDERR", "1", 1)
+}()
+
+private let _logger = Logger(
+    subsystem: Bundle.main.bundleIdentifier ?? "com.octopusiot.guardroom",
+    category: "webrtc"
+)
 
 private func glog(_ msg: String) {
-    let line = "GUARDROOM \(msg)\n"
+    _ = _oslogSetup
+    let ts = String(format: "%.3f", Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 100000))
+    let line = "[\(ts)] GUARDROOM \(msg)\n"
+    _logger.debug("GUARDROOM \(msg, privacy: .public)")
     line.withCString { ptr in _ = write(STDERR_FILENO, ptr, strlen(ptr)) }
+    FileLogger.shared.write(line)
 }
 
 class CameraMatrixWebRTCViewController: UIViewController {
@@ -17,8 +79,10 @@ class CameraMatrixWebRTCViewController: UIViewController {
     var enabled: [Bool] = []
     private var peerConnections: [RTCPeerConnection?] = []
     private var delegates: [WhepDelegate?] = []
-    private var rendererViews: [RTCMTLVideoView?] = []
+    private var frameSinks: [FrameSink?] = []
+    private var rendererViews: [RTCEAGLVideoView?] = []
     private var wrapperViews: [UIView?] = []
+    private var statusLabels: [UILabel?] = []
     // Fallback AVPlayer per H.265 (stesso schema Android)
     private var avPlayers: [AVPlayer?] = []
     private var avLayers: [AVPlayerLayer?] = []
@@ -28,6 +92,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
     private var videoW: [Int] = []
     private var videoH: [Int] = []
     private var lastFrameTime: [TimeInterval] = []
+    private var frameCount: [Int] = []
 
     private static let factory: RTCPeerConnectionFactory = {
         RTCInitializeSSL()
@@ -62,8 +127,10 @@ class CameraMatrixWebRTCViewController: UIViewController {
         enabled         = Array(repeating: true,  count: count)
         peerConnections = Array(repeating: nil,   count: count)
         delegates       = Array(repeating: nil,   count: count)
+        frameSinks      = Array(repeating: nil,   count: count)
         rendererViews   = Array(repeating: nil,   count: count)
         wrapperViews    = Array(repeating: nil,   count: count)
+        statusLabels    = Array(repeating: nil,   count: count)
         avPlayers       = Array(repeating: nil,   count: count)
         avLayers        = Array(repeating: nil,   count: count)
         avObservers     = Array(repeating: nil,   count: count)
@@ -71,6 +138,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
         videoW          = Array(repeating: 0,     count: count)
         videoH          = Array(repeating: 0,     count: count)
         lastFrameTime   = Array(repeating: 0,     count: count)
+        frameCount      = Array(repeating: 0,     count: count)
 
         setupScrollView()
         setupControls()
@@ -134,18 +202,44 @@ class CameraMatrixWebRTCViewController: UIViewController {
     // MARK: - WebRTC slot
 
     private func createWebRTCSlot(at i: Int) {
-        let renderer = RTCMTLVideoView(frame: .zero)
-        renderer.videoContentMode = .scaleAspectFit
+        let renderer = RTCEAGLVideoView(frame: .zero)
+        renderer.contentMode = .scaleAspectFit
         rendererViews[i] = renderer
+
+        let label = UILabel()
+        label.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        label.textColor = .yellow
+        label.backgroundColor = UIColor.black.withAlphaComponent(0.6)
+        label.numberOfLines = 0
+        label.text = "[\(i)] avvio..."
+        statusLabels[i] = label
 
         let wrapper = UIView()
         wrapper.backgroundColor = .black
         wrapper.addSubview(renderer)
-        renderer.frame = wrapper.bounds
-        renderer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        wrapper.addSubview(label)
+        renderer.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            renderer.topAnchor.constraint(equalTo: wrapper.topAnchor),
+            renderer.bottomAnchor.constraint(equalTo: wrapper.bottomAnchor),
+            renderer.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor),
+            renderer.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor),
+        ])
+        label.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor, constant: 4),
+            label.bottomAnchor.constraint(equalTo: wrapper.bottomAnchor, constant: -4),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: wrapper.trailingAnchor, constant: -4),
+        ])
         wrapperViews[i] = wrapper
 
         startWhep(url: streamUrls[i], idx: i)
+    }
+
+    fileprivate func updateStatus(_ i: Int, _ text: String) {
+        DispatchQueue.main.async { [weak self] in
+            self?.statusLabels[i]?.text = "[\(i)] \(text)"
+        }
     }
 
     // MARK: - WHEP signaling
@@ -155,11 +249,13 @@ class CameraMatrixWebRTCViewController: UIViewController {
             guard let self = self else { return }
             for attempt in 1...self.maxRetries {
                 guard self.enabled[idx] else { return }
+                self.updateStatus(idx, "WHEP tentativo \(attempt)")
                 glog("Cam \(idx): WHEP tentativo \(attempt)")
                 if self.doWhep(url: url, idx: idx) { return }
                 if attempt < self.maxRetries { Thread.sleep(forTimeInterval: 3) }
             }
             glog("Cam \(idx): tutti tentativi WHEP esauriti -> HLS")
+            self.updateStatus(idx, "WHEP fallito -> HLS")
             self.switchToHls(idx: idx)
         }
     }
@@ -218,8 +314,11 @@ class CameraMatrixWebRTCViewController: UIViewController {
 
         guard (statusCode == 200 || statusCode == 201), let sdp = answerSdp else {
             glog("Cam \(idx): WHEP risposta HTTP \(statusCode)")
+            updateStatus(idx, "HTTP \(statusCode)")
             pc.close(); return false
         }
+
+        updateStatus(idx, "SDP OK, ICE...")
 
         let sem4 = DispatchSemaphore(value: 0)
         pc.setRemoteDescription(RTCSessionDescription(type: .answer, sdp: sdp)) { _ in sem4.signal() }
@@ -232,6 +331,9 @@ class CameraMatrixWebRTCViewController: UIViewController {
                 if transceiver.mediaType == .video,
                    let track = transceiver.receiver.track as? RTCVideoTrack {
                     glog("Cam \(idx): attacco renderer via transceiver")
+                    let sink = FrameSink(idx: idx, vc: self)
+                    self.frameSinks[idx] = sink
+                    track.add(sink)
                     track.add(capturedRenderer)
                     track.isEnabled = true
                 }
@@ -251,6 +353,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
         peerConnections[idx]?.close()
         peerConnections[idx] = nil
         rendererViews[idx] = nil
+        frameSinks[idx] = nil
         isHlsFallback[idx] = true
 
         let hlsUrl = streamUrls[idx]
@@ -290,7 +393,11 @@ class CameraMatrixWebRTCViewController: UIViewController {
     // Chiamato dal delegate ad ogni frame WebRTC
     fileprivate func onFrame(idx: Int, width: Int, height: Int) {
         lastFrameTime[idx] = Date().timeIntervalSince1970
+        frameCount[idx] += 1
         if videoW[idx] == 0 { videoW[idx] = width; videoH[idx] = height }
+        if frameCount[idx] == 1 || frameCount[idx] % 30 == 0 {
+            updateStatus(idx, "frames:\(frameCount[idx]) \(width)x\(height)")
+        }
     }
 
     // MARK: - Layout
@@ -373,7 +480,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
     private func enableStream(_ i: Int) {
         guard !enabled[i] else { return }
         enabled[i] = true; isHlsFallback[i] = false
-        videoW[i] = 0; videoH[i] = 0; lastFrameTime[i] = 0
+        videoW[i] = 0; videoH[i] = 0; lastFrameTime[i] = 0; frameCount[i] = 0
         createWebRTCSlot(at: i)
         updateColsRows()
         buildGrid()
@@ -388,7 +495,9 @@ class CameraMatrixWebRTCViewController: UIViewController {
         enabled[i] = false
         peerConnections[i]?.close(); peerConnections[i] = nil
         delegates[i] = nil
+        frameSinks[i] = nil
         rendererViews[i] = nil
+        statusLabels[i] = nil
         if let obs = avObservers[i] { NotificationCenter.default.removeObserver(obs) }
         avObservers[i] = nil
         avPlayers[i]?.pause(); avPlayers[i] = nil
@@ -430,10 +539,11 @@ class CameraMatrixWebRTCViewController: UIViewController {
         guard enabled[i] else { return }
         peerConnections[i]?.close(); peerConnections[i] = nil
         delegates[i] = nil
-        videoW[i] = 0; videoH[i] = 0; lastFrameTime[i] = 0
+        frameSinks[i] = nil
+        videoW[i] = 0; videoH[i] = 0; lastFrameTime[i] = 0; frameCount[i] = 0
 
-        let renderer = RTCMTLVideoView(frame: .zero)
-        renderer.videoContentMode = .scaleAspectFit
+        let renderer = RTCEAGLVideoView(frame: .zero)
+        renderer.contentMode = .scaleAspectFit
         rendererViews[i] = renderer
 
         DispatchQueue.main.async { [weak self] in
@@ -442,6 +552,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
             wrapper.addSubview(renderer)
             renderer.frame = wrapper.bounds
             renderer.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            if let label = self.statusLabels[i] { wrapper.addSubview(label) }
         }
         startWhep(url: streamUrls[i], idx: i)
     }
@@ -478,8 +589,10 @@ class CameraMatrixWebRTCViewController: UIViewController {
         avLayers.forEach { $0?.removeFromSuperlayer() }
         peerConnections.removeAll()
         delegates.removeAll()
+        frameSinks.removeAll()
         rendererViews.removeAll()
         wrapperViews.removeAll()
+        statusLabels.removeAll()
         avPlayers.removeAll()
         avLayers.removeAll()
         avObservers.removeAll()
@@ -515,9 +628,9 @@ private class H265VideoDecoderFactory: NSObject, RTCVideoDecoderFactory {
 private class WhepDelegate: NSObject, RTCPeerConnectionDelegate {
     let idx: Int
     weak var vc: CameraMatrixWebRTCViewController?
-    let renderer: RTCMTLVideoView
+    let renderer: RTCEAGLVideoView
 
-    init(idx: Int, vc: CameraMatrixWebRTCViewController, renderer: RTCMTLVideoView) {
+    init(idx: Int, vc: CameraMatrixWebRTCViewController, renderer: RTCEAGLVideoView) {
         self.idx = idx; self.vc = vc; self.renderer = renderer
     }
 
@@ -525,15 +638,36 @@ private class WhepDelegate: NSObject, RTCPeerConnectionDelegate {
                         didAdd rtpReceiver: RTCRtpReceiver,
                         streams: [RTCMediaStream]) {
         guard let track = rtpReceiver.track as? RTCVideoTrack else { return }
-        glog("Cam \(self.idx): VideoTrack ricevuta")
-        let sink = FrameSink(idx: self.idx, vc: vc)
-        track.add(sink)
-        DispatchQueue.main.async { track.add(self.renderer) }
+        glog("Cam \(self.idx): VideoTrack ricevuta via didAdd rtpReceiver")
+        vc?.updateStatus(idx, "track ricevuta, attacco renderer")
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            let sink = FrameSink(idx: self.idx, vc: self.vc)
+            self.vc?.frameSinks[self.idx] = sink
+            track.add(sink)
+            track.add(self.renderer)
+            track.isEnabled = true
+        }
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection,
                         didChange newState: RTCPeerConnectionState) {
         glog("Cam \(self.idx): connectionState=\(newState.rawValue)")
+        vc?.updateStatus(idx, "connState=\(newState.rawValue)")
+        if newState == .connected {
+            // Riattacca renderer quando ICE è davvero connesso
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                for transceiver in peerConnection.transceivers {
+                    if transceiver.mediaType == .video,
+                       let track = transceiver.receiver.track as? RTCVideoTrack {
+                        glog("Cam \(self.idx): riattacco renderer su .connected")
+                        track.add(self.renderer)
+                        track.isEnabled = true
+                    }
+                }
+            }
+        }
         if newState == .failed {
             glog("Cam \(self.idx): connessione fallita -> restart in 3s")
             DispatchQueue.global().asyncAfter(deadline: .now() + 3) { [weak self] in
@@ -548,6 +682,7 @@ private class WhepDelegate: NSObject, RTCPeerConnectionDelegate {
         DispatchQueue.main.async {
             for track in stream.videoTracks {
                 glog("Cam \(self.idx): VideoTrack via didAdd stream")
+                self.vc?.updateStatus(self.idx, "track via stream, attacco")
                 track.add(self.renderer)
                 track.isEnabled = true
             }
@@ -555,7 +690,10 @@ private class WhepDelegate: NSObject, RTCPeerConnectionDelegate {
     }
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
     func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {}
+    func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
+        glog("Cam \(self.idx): iceState=\(newState.rawValue)")
+        vc?.updateStatus(idx, "ICE=\(newState.rawValue)")
+    }
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
