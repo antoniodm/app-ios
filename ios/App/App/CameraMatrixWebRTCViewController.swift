@@ -80,7 +80,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
     private var peerConnections: [RTCPeerConnection?] = []
     private var delegates: [WhepDelegate?] = []
     fileprivate var frameSinks: [FrameSink?] = []
-    private var rendererViews: [RTCEAGLVideoView?] = []
+    private var rendererViews: [RTCMTLVideoView?] = []
     private var wrapperViews: [UIView?] = []
     private var statusLabels: [UILabel?] = []
     // Fallback AVPlayer per H.265 (stesso schema Android)
@@ -205,8 +205,8 @@ class CameraMatrixWebRTCViewController: UIViewController {
     // MARK: - WebRTC slot
 
     private func createWebRTCSlot(at i: Int) {
-        let renderer = RTCEAGLVideoView(frame: .zero)
-        renderer.contentMode = .scaleAspectFit
+        let renderer = RTCMTLVideoView(frame: .zero)
+        renderer.videoContentMode = .scaleAspectFit
         rendererViews[i] = renderer
 
         let label = UILabel()
@@ -545,8 +545,8 @@ class CameraMatrixWebRTCViewController: UIViewController {
         frameSinks[i] = nil
         videoW[i] = 0; videoH[i] = 0; lastFrameTime[i] = 0; frameCount[i] = 0
 
-        let renderer = RTCEAGLVideoView(frame: .zero)
-        renderer.contentMode = .scaleAspectFit
+        let renderer = RTCMTLVideoView(frame: .zero)
+        renderer.videoContentMode = .scaleAspectFit
         rendererViews[i] = renderer
 
         DispatchQueue.main.async { [weak self] in
@@ -631,9 +631,9 @@ private class H265VideoDecoderFactory: NSObject, RTCVideoDecoderFactory {
 private class WhepDelegate: NSObject, RTCPeerConnectionDelegate {
     let idx: Int
     weak var vc: CameraMatrixWebRTCViewController?
-    let renderer: RTCEAGLVideoView
+    let renderer: RTCMTLVideoView
 
-    init(idx: Int, vc: CameraMatrixWebRTCViewController, renderer: RTCEAGLVideoView) {
+    init(idx: Int, vc: CameraMatrixWebRTCViewController, renderer: RTCMTLVideoView) {
         self.idx = idx; self.vc = vc; self.renderer = renderer
     }
 
