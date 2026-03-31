@@ -13,6 +13,8 @@ class CameraMatrixWebRTCViewController: UIViewController {
     var streamNames: [String] = []
 
     var enabled: [Bool] = []
+    // true = tutti i retry (WHEP + HLS) esauriti, cam non raggiungibile
+    var failed: [Bool] = []
     private var peerConnections: [RTCPeerConnection?] = []
     private var delegates: [WhepDelegate?] = []
     fileprivate var frameSinks: [FrameSink?] = []
@@ -22,7 +24,9 @@ class CameraMatrixWebRTCViewController: UIViewController {
     private var avPlayers: [AVPlayer?] = []
     private var avLayers: [AVPlayerLayer?] = []
     private var avObservers: [NSObjectProtocol?] = []
+    private var avKVOTokens: [NSKeyValueObservation?] = []
     private var isHlsFallback: [Bool] = []
+    private var hlsFailCount: [Int] = []
 
     private var videoW: [Int] = []
     private var videoH: [Int] = []
@@ -47,6 +51,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
     private var rows = 1
 
     private let maxRetries = 4
+    private let maxHlsFails = 3
 
     override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
     override var prefersStatusBarHidden: Bool { true }
@@ -59,27 +64,31 @@ class CameraMatrixWebRTCViewController: UIViewController {
         view.backgroundColor = .black
 
         let count = streamUrls.count
-        enabled         = Array(repeating: true,  count: count)
-        peerConnections = Array(repeating: nil,   count: count)
-        delegates       = Array(repeating: nil,   count: count)
-        frameSinks      = Array(repeating: nil,   count: count)
-        videoTracks     = Array(repeating: nil,   count: count)
-        rendererViews   = Array(repeating: nil,   count: count)
-        wrapperViews    = Array(repeating: nil,   count: count)
-        avPlayers       = Array(repeating: nil,   count: count)
-        avLayers        = Array(repeating: nil,   count: count)
-        avObservers     = Array(repeating: nil,   count: count)
-        isHlsFallback   = Array(repeating: false, count: count)
-        videoW          = Array(repeating: 0,     count: count)
-        videoH          = Array(repeating: 0,     count: count)
-        lastFrameTime   = Array(repeating: 0,     count: count)
-        frameCount      = Array(repeating: 0,     count: count)
+        enabled       = Array(repeating: true,  count: count)
+        failed        = Array(repeating: false, count: count)
+        peerConnections = Array(repeating: nil, count: count)
+        delegates     = Array(repeating: nil,   count: count)
+        frameSinks    = Array(repeating: nil,   count: count)
+        videoTracks   = Array(repeating: nil,   count: count)
+        rendererViews = Array(repeating: nil,   count: count)
+        wrapperViews  = Array(repeating: nil,   count: count)
+        avPlayers     = Array(repeating: nil,   count: count)
+        avLayers      = Array(repeating: nil,   count: count)
+        avObservers   = Array(repeating: nil,   count: count)
+        avKVOTokens   = Array(repeating: nil,   count: count)
+        isHlsFallback = Array(repeating: false, count: count)
+        hlsFailCount  = Array(repeating: 0,     count: count)
+        videoW        = Array(repeating: 0,     count: count)
+        videoH        = Array(repeating: 0,     count: count)
+        lastFrameTime = Array(repeating: 0,     count: count)
+        frameCount    = Array(repeating: 0,     count: count)
 
         setupScrollView()
         setupControls()
         updateColsRows()
 
-        for i in 0..<count { createWebRTCSlot(at: i) }
+        // Avvia ogni stream indipendentemente; la griglia si aggiorna cam per cam
+        for i in 0..<count { startWhep(url: streamUrls[i], idx: i) }
         buildGrid()
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
@@ -137,15 +146,43 @@ class CameraMatrixWebRTCViewController: UIViewController {
         return btn
     }
 
-    // MARK: - WebRTC slot
+    // MARK: - Track attachment (lazy, chiamato quando la connessione è pronta)
 
-    private func createWebRTCSlot(at i: Int) {
+    /// Crea renderer+wrapper per una cam al primo aggancio, oppure riusa il wrapper esistente per restart.
+    /// Deve essere chiamato sul main thread.
+    fileprivate func attachTrack(_ track: RTCVideoTrack, idx: Int) {
+        assert(Thread.isMainThread)
+        guard enabled[idx], !failed[idx] else { return }
+
         let renderer = RTCMTLVideoView(frame: .zero)
         renderer.videoContentMode = .scaleAspectFit
-        rendererViews[i] = renderer
+        rendererViews[idx] = renderer
 
-        let wrapper = UIView()
-        wrapper.backgroundColor = .black
+        if wrapperViews[idx] == nil {
+            // Prima connessione: crea wrapper e aggiunge alla griglia
+            let wrapper = UIView()
+            wrapper.backgroundColor = .black
+            wrapperViews[idx] = wrapper
+            addRendererToWrapper(renderer, wrapper: wrapper)
+            updateColsRows()
+            buildGridSync()
+        } else {
+            // Restart: riusa wrapper esistente, sostituisce il renderer
+            let wrapper = wrapperViews[idx]!
+            wrapper.subviews.forEach { $0.removeFromSuperview() }
+            addRendererToWrapper(renderer, wrapper: wrapper)
+        }
+
+        videoTracks[idx] = track
+        let sink = FrameSink(idx: idx, vc: self)
+        frameSinks[idx] = sink
+        track.add(sink)
+        track.add(renderer)
+        track.isEnabled = true
+        glog("Cam \(idx): track attaccata, renderer aggiunto alla griglia")
+    }
+
+    private func addRendererToWrapper(_ renderer: RTCMTLVideoView, wrapper: UIView) {
         wrapper.addSubview(renderer)
         renderer.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -154,9 +191,6 @@ class CameraMatrixWebRTCViewController: UIViewController {
             renderer.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor),
             renderer.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor),
         ])
-        wrapperViews[i] = wrapper
-
-        startWhep(url: streamUrls[i], idx: i)
     }
 
     // MARK: - WHEP signaling
@@ -165,18 +199,18 @@ class CameraMatrixWebRTCViewController: UIViewController {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             for attempt in 1...self.maxRetries {
-                guard self.enabled[idx] else { return }
+                guard self.enabled[idx], !self.failed[idx] else { return }
                 glog("Cam \(idx): WHEP tentativo \(attempt)")
                 if self.doWhep(url: url, idx: idx) { return }
                 if attempt < self.maxRetries { Thread.sleep(forTimeInterval: 3) }
             }
-            glog("Cam \(idx): tutti tentativi esauriti -> HLS")
+            glog("Cam \(idx): tutti tentativi WHEP esauriti -> HLS")
             self.switchToHls(idx: idx)
         }
     }
 
     private func doWhep(url: String, idx: Int) -> Bool {
-        guard enabled[idx], let renderer = rendererViews[idx] else { return true }
+        guard enabled[idx], !failed[idx] else { return true }
 
         let config = RTCConfiguration()
         config.iceServers = []
@@ -184,7 +218,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
         config.bundlePolicy = .maxBundle
         config.rtcpMuxPolicy = .require
 
-        let delegate = WhepDelegate(idx: idx, vc: self, renderer: renderer)
+        let delegate = WhepDelegate(idx: idx, vc: self)
         delegates[idx] = delegate
         guard let pc = Self.factory.peerConnection(
             with: config,
@@ -234,19 +268,12 @@ class CameraMatrixWebRTCViewController: UIViewController {
         pc.setRemoteDescription(RTCSessionDescription(type: .answer, sdp: sdp)) { _ in sem4.signal() }
         sem4.wait()
 
-        let capturedRenderer = renderer
-        DispatchQueue.main.async {
+        // Aggancia track sul main thread; il delegate può farlo prima via .connected
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, self.enabled[idx], !self.failed[idx] else { return }
             for transceiver in pc.transceivers where transceiver.mediaType == .video {
                 if let track = transceiver.receiver.track as? RTCVideoTrack {
-                    self.videoTracks[idx] = track
-                    let sink = FrameSink(idx: idx, vc: self)
-                    self.frameSinks[idx] = sink
-                    track.add(sink)
-                    track.add(capturedRenderer)
-                    track.isEnabled = true
-                    glog("Cam \(idx): track attaccata via transceiver")
-                } else {
-                    glog("Cam \(idx): track NIL dopo setRemote")
+                    self.attachTrack(track, idx: idx)
                 }
             }
         }
@@ -259,7 +286,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
     // MARK: - Fallback HLS
 
     fileprivate func switchToHls(idx: Int) {
-        guard enabled[idx] else { return }
+        guard enabled[idx], !failed[idx] else { return }
         glog("Cam \(idx): switch a HLS")
         peerConnections[idx]?.close()
         peerConnections[idx] = nil
@@ -272,33 +299,93 @@ class CameraMatrixWebRTCViewController: UIViewController {
         guard let url = URL(string: hlsUrl) else { return }
 
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
+            guard let self = self, self.enabled[idx], !self.failed[idx] else { return }
             let wrapper = UIView()
             wrapper.backgroundColor = .black
+            self.setupHlsPlayer(idx: idx, url: url, wrapper: wrapper)
+            self.wrapperViews[idx] = wrapper
+            self.updateColsRows()
+            self.buildGridSync()
+        }
+    }
 
-            let item = AVPlayerItem(url: url)
-            let player = AVPlayer(playerItem: item)
-            player.isMuted = true
-            self.avPlayers[idx] = player
+    private func setupHlsPlayer(idx: Int, url: URL, wrapper: UIView) {
+        // Rimuovi layer precedente se presente (retry)
+        avLayers[idx]?.removeFromSuperlayer()
+        avKVOTokens[idx] = nil
+        if let obs = avObservers[idx] { NotificationCenter.default.removeObserver(obs) }
+        avPlayers[idx]?.pause()
 
-            let layer = AVPlayerLayer(player: player)
-            layer.videoGravity = .resizeAspect
-            self.avLayers[idx] = layer
-            wrapper.layer.addSublayer(layer)
+        let item = AVPlayerItem(url: url)
+        let player = AVPlayer(playerItem: item)
+        player.isMuted = true
+        avPlayers[idx] = player
 
-            let obs = NotificationCenter.default.addObserver(
-                forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
-            ) { [weak self, weak player] _ in
-                guard let self = self, self.enabled[idx], let p = player else { return }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
-                    guard let self = self, self.enabled[idx] else { return }
-                    p.seek(to: .zero); p.play()
+        let layer = AVPlayerLayer(player: player)
+        layer.videoGravity = .resizeAspect
+        avLayers[idx] = layer
+        wrapper.layer.addSublayer(layer)
+
+        // Observer fine stream → riavvia
+        let obs = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
+        ) { [weak self, weak player] _ in
+            guard let self = self, self.enabled[idx], !self.failed[idx], let p = player else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                guard let self = self, self.enabled[idx], !self.failed[idx] else { return }
+                p.seek(to: .zero); p.play()
+            }
+        }
+        avObservers[idx] = obs
+
+        // KVO su status per rilevare errori HLS
+        avKVOTokens[idx] = item.observe(\.status, options: [.new]) { [weak self] item, _ in
+            guard let self = self else { return }
+            if item.status == .failed {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self, self.enabled[idx], !self.failed[idx] else { return }
+                    self.hlsFailCount[idx] += 1
+                    glog("Cam \(idx): HLS errore \(self.hlsFailCount[idx])/\(self.maxHlsFails)")
+                    if self.hlsFailCount[idx] >= self.maxHlsFails {
+                        self.markFailed(idx: idx)
+                    } else {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                            guard let self = self, self.enabled[idx], !self.failed[idx],
+                                  let wrapper = self.wrapperViews[idx] else { return }
+                            self.setupHlsPlayer(idx: idx, url: url, wrapper: wrapper)
+                            self.avPlayers[idx]?.play()
+                        }
+                    }
                 }
             }
-            self.avObservers[idx] = obs
-            player.play()
-            self.wrapperViews[idx] = wrapper
-            self.buildGrid()
+        }
+
+        player.play()
+    }
+
+    /// Marca una cam come definitivamente irraggiungibile e la rimuove dalla griglia.
+    fileprivate func markFailed(idx: Int) {
+        guard enabled[idx], !failed[idx] else { return }
+        glog("Cam \(idx): \(streamNames[idx]) fallita definitivamente")
+        failed[idx] = true
+        avKVOTokens[idx] = nil
+        if let obs = avObservers[idx] { NotificationCenter.default.removeObserver(obs) }
+        avObservers[idx] = nil
+        avPlayers[idx]?.pause(); avPlayers[idx] = nil
+        avLayers[idx]?.removeFromSuperlayer(); avLayers[idx] = nil
+        isHlsFallback[idx] = false
+        peerConnections[idx]?.close(); peerConnections[idx] = nil
+        delegates[idx] = nil
+        frameSinks[idx] = nil
+        videoTracks[idx] = nil
+        rendererViews[idx] = nil
+        wrapperViews[idx]?.removeFromSuperview(); wrapperViews[idx] = nil
+        updateColsRows()
+        buildGridSync()
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.streamsButton.setTitle(self.streamsBtnLabel(), for: .normal)
+            self.streamsButton.sizeToFit()
         }
     }
 
@@ -311,7 +398,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
     // MARK: - Layout
 
     private func updateColsRows() {
-        let active = enabled.filter { $0 }.count
+        let active = (0..<enabled.count).filter { enabled[$0] && !failed[$0] }.count
         if active == 0 { cols = 1; rows = 1; return }
         let isPortrait = view.bounds.height > view.bounds.width
         cols = isPortrait ? 1 : (active == 1 ? 1 : active <= 4 ? 2 : 3)
@@ -320,43 +407,47 @@ class CameraMatrixWebRTCViewController: UIViewController {
 
     fileprivate func buildGrid() {
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.contentView.subviews.forEach { $0.removeFromSuperview() }
-
-            let screenW = self.view.bounds.width
-            let cellW = screenW / CGFloat(max(self.cols, 1))
-            let cellH = cellW * 9.0 / 16.0
-
-            let active = (0..<self.streamUrls.count).filter {
-                self.enabled[$0] && self.wrapperViews[$0] != nil
-            }
-
-            var pos = 0; var yOffset: CGFloat = 0
-            for _ in 0..<self.rows {
-                var xOffset: CGFloat = 0
-                for _ in 0..<self.cols {
-                    guard pos < active.count else { break }
-                    let si = active[pos]; pos += 1
-                    let wrapper = self.wrapperViews[si]!
-                    wrapper.frame = CGRect(x: xOffset, y: yOffset, width: cellW, height: cellH)
-                    self.contentView.addSubview(wrapper)
-                    if self.isHlsFallback[si] { self.avLayers[si]?.frame = wrapper.bounds }
-                    xOffset += cellW
-                }
-                yOffset += cellH
-            }
-
-            let totalH = max(CGFloat(self.rows) * cellH, 1)
-            self.contentView.frame = CGRect(x: 0, y: 0, width: screenW, height: totalH)
-            self.scrollView.contentSize = CGSize(width: screenW, height: totalH)
-
-            self.closeButton.sizeToFit()
-            self.closeButton.frame.origin = CGPoint(x: screenW - self.closeButton.frame.width - 16, y: 48)
-            self.streamsButton.sizeToFit()
-            self.streamsButton.frame.origin = CGPoint(x: 16, y: 48)
-            self.view.bringSubviewToFront(self.closeButton)
-            self.view.bringSubviewToFront(self.streamsButton)
+            self?.buildGridSync()
         }
+    }
+
+    private func buildGridSync() {
+        assert(Thread.isMainThread)
+        contentView.subviews.forEach { $0.removeFromSuperview() }
+
+        let screenW = view.bounds.width
+        let cellW = screenW / CGFloat(max(cols, 1))
+        let cellH = cellW * 9.0 / 16.0
+
+        let active = (0..<streamUrls.count).filter {
+            enabled[$0] && !failed[$0] && wrapperViews[$0] != nil
+        }
+
+        var pos = 0; var yOffset: CGFloat = 0
+        for _ in 0..<rows {
+            var xOffset: CGFloat = 0
+            for _ in 0..<cols {
+                guard pos < active.count else { break }
+                let si = active[pos]; pos += 1
+                let wrapper = wrapperViews[si]!
+                wrapper.frame = CGRect(x: xOffset, y: yOffset, width: cellW, height: cellH)
+                contentView.addSubview(wrapper)
+                if isHlsFallback[si] { avLayers[si]?.frame = wrapper.bounds }
+                xOffset += cellW
+            }
+            yOffset += cellH
+        }
+
+        let totalH = max(CGFloat(rows) * cellH, 1)
+        contentView.frame = CGRect(x: 0, y: 0, width: screenW, height: totalH)
+        scrollView.contentSize = CGSize(width: screenW, height: totalH)
+
+        closeButton.sizeToFit()
+        closeButton.frame.origin = CGPoint(x: screenW - closeButton.frame.width - 16, y: 48)
+        streamsButton.sizeToFit()
+        streamsButton.frame.origin = CGPoint(x: 16, y: 48)
+        view.bringSubviewToFront(closeButton)
+        view.bringSubviewToFront(streamsButton)
     }
 
     // MARK: - Gestione flussi
@@ -364,10 +455,14 @@ class CameraMatrixWebRTCViewController: UIViewController {
     @objc private func showStreamsDialog() {
         let alert = UIAlertController(title: "Flussi", message: nil, preferredStyle: .actionSheet)
         for (i, name) in streamNames.enumerated() {
-            let mark = enabled[i] ? "✓ " : "○ "
+            let mark: String
+            if failed[i]       { mark = "⚠ " }
+            else if enabled[i] { mark = "✓ " }
+            else               { mark = "○ " }
             alert.addAction(UIAlertAction(title: mark + name + streamInfo(i), style: .default) { [weak self] _ in
                 guard let self = self else { return }
-                if self.enabled[i] { self.disableStream(i) } else { self.enableStream(i) }
+                if self.failed[i] || !self.enabled[i] { self.enableStream(i) }
+                else { self.disableStream(i) }
             })
         }
         alert.addAction(UIAlertAction(title: "OK", style: .cancel))
@@ -378,17 +473,21 @@ class CameraMatrixWebRTCViewController: UIViewController {
     }
 
     private func streamInfo(_ i: Int) -> String {
+        if failed[i] { return "\nfallita — tocca per riprovare" }
         guard enabled[i] else { return "" }
         let proto = isHlsFallback[i] ? "HLS" : "WebRTC"
         if videoW[i] > 0 { return "\n\(videoW[i])×\(videoH[i])  \(proto)" }
-        return "\n\(proto)"
+        return "\n\(proto) (connessione...)"
     }
 
     private func enableStream(_ i: Int) {
-        guard !enabled[i] else { return }
-        enabled[i] = true; isHlsFallback[i] = false
+        guard !enabled[i] || failed[i] else { return }
+        enabled[i] = true
+        failed[i] = false
+        isHlsFallback[i] = false
+        hlsFailCount[i] = 0
         videoW[i] = 0; videoH[i] = 0; lastFrameTime[i] = 0; frameCount[i] = 0
-        createWebRTCSlot(at: i)
+        startWhep(url: streamUrls[i], idx: i)
         updateColsRows()
         buildGrid()
         DispatchQueue.main.async { [weak self] in
@@ -398,8 +497,10 @@ class CameraMatrixWebRTCViewController: UIViewController {
     }
 
     private func disableStream(_ i: Int) {
-        guard enabled[i] else { return }
+        guard enabled[i] || failed[i] else { return }
         enabled[i] = false
+        failed[i] = false
+        avKVOTokens[i] = nil
         peerConnections[i]?.close(); peerConnections[i] = nil
         delegates[i] = nil
         frameSinks[i] = nil
@@ -420,8 +521,11 @@ class CameraMatrixWebRTCViewController: UIViewController {
     }
 
     private func streamsBtnLabel() -> String {
-        let active = enabled.filter { $0 }.count
-        return "≡  \(active)/\(streamUrls.count) flussi"
+        let active = (0..<enabled.count).filter { enabled[$0] && !failed[$0] }.count
+        let failedCount = failed.filter { $0 }.count
+        var label = "≡  \(active)/\(streamUrls.count) flussi"
+        if failedCount > 0 { label += "  ⚠\(failedCount)" }
+        return label
     }
 
     // MARK: - Watchdog
@@ -435,7 +539,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
     private func checkStreams() {
         let now = Date().timeIntervalSince1970
         for i in 0..<enabled.count {
-            guard enabled[i], !isHlsFallback[i], lastFrameTime[i] > 0,
+            guard enabled[i], !failed[i], !isHlsFallback[i], lastFrameTime[i] > 0,
                   now - lastFrameTime[i] > 10 else { continue }
             glog("Cam \(i): freeze -> restart")
             restartWhep(i)
@@ -443,28 +547,16 @@ class CameraMatrixWebRTCViewController: UIViewController {
     }
 
     fileprivate func restartWhep(_ i: Int) {
-        guard enabled[i] else { return }
+        guard enabled[i], !failed[i] else { return }
         peerConnections[i]?.close(); peerConnections[i] = nil
         delegates[i] = nil
         frameSinks[i] = nil
         videoTracks[i] = nil
+        rendererViews[i] = nil
         videoW[i] = 0; videoH[i] = 0; lastFrameTime[i] = 0; frameCount[i] = 0
-
-        let renderer = RTCMTLVideoView(frame: .zero)
-        renderer.videoContentMode = .scaleAspectFit
-        rendererViews[i] = renderer
-
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self, let wrapper = self.wrapperViews[i] else { return }
+        // Svuota il wrapper esistente (se presente) ma non lo rimuove dalla griglia
+        if let wrapper = wrapperViews[i] {
             wrapper.subviews.forEach { $0.removeFromSuperview() }
-            wrapper.addSubview(renderer)
-            renderer.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([
-                renderer.topAnchor.constraint(equalTo: wrapper.topAnchor),
-                renderer.bottomAnchor.constraint(equalTo: wrapper.bottomAnchor),
-                renderer.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor),
-                renderer.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor),
-            ])
         }
         startWhep(url: streamUrls[i], idx: i)
     }
@@ -495,6 +587,8 @@ class CameraMatrixWebRTCViewController: UIViewController {
     private func releaseAll() {
         hideTimer?.invalidate(); hideTimer = nil
         watchdogTimer?.invalidate(); watchdogTimer = nil
+        avKVOTokens.forEach { _ = $0 }  // auto-invalidate
+        avKVOTokens.removeAll()
         delegates.removeAll()
         frameSinks.removeAll()
         videoTracks.removeAll()
@@ -509,6 +603,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
         avLayers.removeAll()
         avObservers.removeAll()
         enabled.removeAll()
+        failed.removeAll()
     }
 
     deinit { releaseAll() }
@@ -519,10 +614,9 @@ class CameraMatrixWebRTCViewController: UIViewController {
 private class WhepDelegate: NSObject, RTCPeerConnectionDelegate {
     let idx: Int
     weak var vc: CameraMatrixWebRTCViewController?
-    let renderer: RTCMTLVideoView
 
-    init(idx: Int, vc: CameraMatrixWebRTCViewController, renderer: RTCMTLVideoView) {
-        self.idx = idx; self.vc = vc; self.renderer = renderer
+    init(idx: Int, vc: CameraMatrixWebRTCViewController) {
+        self.idx = idx; self.vc = vc
     }
 
     func peerConnection(_ peerConnection: RTCPeerConnection,
@@ -531,13 +625,8 @@ private class WhepDelegate: NSObject, RTCPeerConnectionDelegate {
         guard let track = rtpReceiver.track as? RTCVideoTrack else { return }
         glog("Cam \(self.idx): didAdd rtpReceiver video")
         DispatchQueue.main.async { [weak self] in
-            guard let self = self, let vc = self.vc else { return }
-            vc.videoTracks[self.idx] = track
-            let sink = FrameSink(idx: self.idx, vc: vc)
-            vc.frameSinks[self.idx] = sink
-            track.add(sink)
-            track.add(self.renderer)
-            track.isEnabled = true
+            guard let self = self else { return }
+            self.vc?.attachTrack(track, idx: self.idx)
         }
     }
 
@@ -549,13 +638,8 @@ private class WhepDelegate: NSObject, RTCPeerConnectionDelegate {
                 guard let self = self, let vc = self.vc else { return }
                 for transceiver in peerConnection.transceivers where transceiver.mediaType == .video {
                     if let track = transceiver.receiver.track as? RTCVideoTrack {
-                        vc.videoTracks[self.idx] = track
-                        let sink = FrameSink(idx: self.idx, vc: vc)
-                        vc.frameSinks[self.idx] = sink
-                        track.add(sink)
-                        track.add(self.renderer)
-                        track.isEnabled = true
-                        glog("Cam \(self.idx): sink+renderer su .connected")
+                        vc.attachTrack(track, idx: self.idx)
+                        glog("Cam \(self.idx): track attaccata via .connected")
                     }
                 }
             }
@@ -564,7 +648,8 @@ private class WhepDelegate: NSObject, RTCPeerConnectionDelegate {
             glog("Cam \(self.idx): failed -> restart in 3s")
             DispatchQueue.global().asyncAfter(deadline: .now() + 3) { [weak self] in
                 guard let self = self, let vc = self.vc,
-                      self.idx < vc.enabled.count, vc.enabled[self.idx] else { return }
+                      self.idx < vc.enabled.count,
+                      vc.enabled[self.idx], !vc.failed[self.idx] else { return }
                 vc.restartWhep(self.idx)
             }
         }
