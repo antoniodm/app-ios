@@ -1,6 +1,6 @@
 # Guardroom24 - App iOS
 
-App nativa iOS basata su **Capacitor 8** che wrappa la webapp `https://davinci.perfortuna.it`. Invia e riceve notifiche push tramite **APNs** (Apple Push Notification service) usando token APNs raw (64 caratteri hex) senza Firebase SDK installato nell'app.
+App nativa iOS basata su **Capacitor 8** che wrappa la webapp `https://guardroom24.it`. Invia e riceve notifiche push tramite **APNs** (Apple Push Notification service) usando token APNs raw (64 caratteri hex) senza Firebase SDK installato nell'app.
 
 ---
 
@@ -102,7 +102,7 @@ L'app appare sulla home screen del dispositivo.
 | Firebase Project | `securhoprova` (solo per Android/web) |
 | CI/CD | Codemagic (workflow `ios-release`) |
 | Distribution | Ad Hoc |
-| Webapp | `https://davinci.perfortuna.it` |
+| Webapp | `https://guardroom24.it` |
 
 L'app non contiene Firebase SDK iOS. Le notifiche push vengono inviate direttamente tramite APNs HTTP/2, autenticate con JWT firmato dalla chiave privata `.p8`. Il token APNs (64 char hex) viene salvato sul database del server tramite l'endpoint `/json_savefcmtoken`.
 
@@ -186,7 +186,7 @@ app-ios/
   "appName": "Guardroom24",
   "webDir": "web-placeholder",
   "server": {
-    "url": "https://davinci.perfortuna.it",
+    "url": "https://guardroom24.it",
     "cleartext": false
   },
   "plugins": {
@@ -506,7 +506,7 @@ E' possibile distribuire via link OTA:
         |
         | 2. token APNs (64 hex)
         v
-[Webapp - davinci.perfortuna.it]
+[Webapp - guardroom24.it]
         |
         | 3. POST /json_savefcmtoken
         v
@@ -794,7 +794,7 @@ Impostazioni > Guardroom24 > Notifiche > Consenti notifiche
 
 ### L'app mostra schermo bianco o non carica
 
-Verificare la connettivita' di rete e che `https://davinci.perfortuna.it` sia raggiungibile dal dispositivo.
+Verificare la connettivita' di rete e che `https://guardroom24.it` sia raggiungibile dal dispositivo.
 
 ---
 
