@@ -68,40 +68,8 @@ public class ExoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
         ExoPlayerPlugin.sharedBridge = bridge
         ExoPlayerPlugin.pendingCloseJs = closeJs
 
-        let typeParam = call.getString("type")
-
-        if let type = typeParam {
-            launchMatrix(type: type, hlsUrls: hlsUrls, names: names)
-            call.resolve()
-        } else {
-            DispatchQueue.main.async {
-                let alert = UIAlertController(
-                    title: "Control Room — tipo di player",
-                    message: nil,
-                    preferredStyle: .actionSheet
-                )
-                let options: [(String, String)] = [
-                    ("WebRTC  (bassa latenza)", "webrtc"),
-                    ("RTSP  (H.265 supportato)", "rtsp"),
-                    ("HLS  (compatibile)",       "hls"),
-                ]
-                for (title, type) in options {
-                    alert.addAction(UIAlertAction(title: title, style: .default) { [weak self] _ in
-                        self?.launchMatrix(type: type, hlsUrls: hlsUrls, names: names)
-                        call.resolve()
-                    })
-                }
-                alert.addAction(UIAlertAction(title: "Annulla", style: .cancel) { _ in
-                    call.reject("cancelled")
-                })
-                if let pop = alert.popoverPresentationController {
-                    pop.sourceView = self.bridge?.viewController?.view
-                    pop.sourceRect = CGRect(x: UIScreen.main.bounds.midX, y: UIScreen.main.bounds.midY, width: 0, height: 0)
-                    pop.permittedArrowDirections = []
-                }
-                self.bridge?.viewController?.present(alert, animated: true)
-            }
-        }
+        launchMatrix(type: "webrtc", hlsUrls: hlsUrls, names: names)
+        call.resolve()
     }
 
     private func launchMatrix(type: String, hlsUrls: [String], names: [String]) {
