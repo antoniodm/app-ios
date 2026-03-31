@@ -227,9 +227,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
         ) else { return false }
 
         let vt = RTCRtpTransceiverInit(); vt.direction = .recvOnly
-        let at = RTCRtpTransceiverInit(); at.direction = .recvOnly
         pc.addTransceiver(of: .video, init: vt)
-        pc.addTransceiver(of: .audio, init: at)
 
         let sem1 = DispatchSemaphore(value: 0)
         var offerSdp: RTCSessionDescription?
