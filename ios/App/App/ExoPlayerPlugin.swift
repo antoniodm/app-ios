@@ -1,6 +1,7 @@
 import Capacitor
 import Foundation
 import UIKit
+import AVKit
 
 @objc(ExoPlayerPlugin)
 public class ExoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
@@ -9,7 +10,12 @@ public class ExoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "askPlayerType", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openMatrix",    returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openStream",    returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "closeStream",   returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "downloadFile",  returnType: CAPPluginReturnPromise),
     ]
+
+    private weak var streamPlayerVC: AVPlayerViewController?
 
     static weak var sharedBridge: CAPBridgeProtocol?
     static var pendingCloseJs: String?
@@ -95,6 +101,67 @@ public class ExoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             vc.modalPresentationStyle = .overFullScreen
             self.bridge?.viewController?.present(vc, animated: false)
+        }
+    }
+
+    // MARK: - openStream / closeStream (video registrato: MP4, ecc.)
+
+    @objc func openStream(_ call: CAPPluginCall) {
+        guard let urlStr = call.getString("url"), let url = URL(string: urlStr) else {
+            call.reject("URL mancante"); return
+        }
+        DispatchQueue.main.async {
+            let player = AVPlayer(url: url)
+            let vc = AVPlayerViewController()
+            vc.player = player
+            vc.modalPresentationStyle = .fullScreen
+            self.streamPlayerVC = vc
+            self.bridge?.viewController?.present(vc, animated: true) {
+                player.play()
+            }
+            call.resolve()
+        }
+    }
+
+    /// Scarica un file dal server (con cookie di sessione) e mostra lo share sheet iOS.
+    @objc func downloadFile(_ call: CAPPluginCall) {
+        guard let urlStr = call.getString("url"), let url = URL(string: urlStr) else {
+            call.reject("URL mancante"); return
+        }
+        // Copia i cookie dalla WKWebView a URLSession così la sessione autenticata viene usata
+        bridge?.webView?.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
+            guard let self = self else { return }
+            for cookie in cookies { HTTPCookieStorage.shared.setCookie(cookie) }
+            let config = URLSessionConfiguration.default
+            config.httpCookieStorage = HTTPCookieStorage.shared
+            config.httpShouldSetCookies = true
+            URLSession(configuration: config).downloadTask(with: url) { [weak self] tempURL, response, error in
+                guard let self = self else { return }
+                if let error = error { call.reject(error.localizedDescription); return }
+                guard let tempURL = tempURL else { call.reject("File non ricevuto"); return }
+                let filename = response?.suggestedFilename ?? url.lastPathComponent
+                let destURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+                try? FileManager.default.removeItem(at: destURL)
+                try? FileManager.default.moveItem(at: tempURL, to: destURL)
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    let vc = UIActivityViewController(activityItems: [destURL], applicationActivities: nil)
+                    if let pop = vc.popoverPresentationController {
+                        pop.sourceView = self.bridge?.viewController?.view
+                    }
+                    self.bridge?.viewController?.present(vc, animated: true)
+                    call.resolve()
+                }
+            }.resume()
+        }
+    }
+
+    @objc func closeStream(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.streamPlayerVC?.player?.pause()
+            self.streamPlayerVC?.dismiss(animated: true)
+            self.streamPlayerVC = nil
+            call.resolve()
         }
     }
 
