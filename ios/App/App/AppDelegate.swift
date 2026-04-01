@@ -18,10 +18,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     func applicationWillEnterForeground(_ application: UIApplication) {}
 
     func applicationDidBecomeActive(_ application: UIApplication) {
-        // Ferma il suono di allarme quando l'utente apre l'app.
-        // Nota: per il tap da background, applicationDidBecomeActive scatta PRIMA
-        // di userNotificationCenter(_:didReceive:), quindi stop() è no-op in quel caso.
-        AlarmSoundManager.shared.stop()
+        // Ferma l'allarme quando l'utente apre l'app, ma solo se suona da più di 3 secondi.
+        // Evita di fermarlo subito dopo l'avvio da tap notifica, dove applicationDidBecomeActive
+        // può scattare subito prima o dopo didReceive a seconda della versione iOS.
+        if AlarmSoundManager.shared.secondsSinceStart > 3 {
+            AlarmSoundManager.shared.stop()
+        }
     }
 
     func applicationWillTerminate(_ application: UIApplication) {}
@@ -45,28 +47,24 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
 extension AppDelegate: UNUserNotificationCenterDelegate {
 
-    // App in foreground: la notifica arriva mentre l'app è aperta
+    // App in foreground: notifica arriva mentre l'app è aperta
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        let channelId = notification.request.content.userInfo["android_channel_id"] as? String ?? ""
-        if channelId == "alarm_channel" {
+        if notification.request.content.categoryIdentifier == AlarmSoundManager.categoryId {
             AlarmSoundManager.shared.start()
         }
         completionHandler([.banner, .sound, .badge])
     }
 
-    // Tap su notifica o azione (da background o foreground)
+    // Tap su notifica o azione (da background/killed o foreground)
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         if response.actionIdentifier == AlarmSoundManager.stopActionId {
             AlarmSoundManager.shared.stop()
-        } else {
-            let channelId = response.notification.request.content.userInfo["android_channel_id"] as? String ?? ""
-            if channelId == "alarm_channel" {
-                AlarmSoundManager.shared.start()
-            }
+        } else if response.notification.request.content.categoryIdentifier == AlarmSoundManager.categoryId {
+            AlarmSoundManager.shared.start()
         }
         completionHandler()
     }

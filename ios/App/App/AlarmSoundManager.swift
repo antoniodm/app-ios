@@ -5,11 +5,12 @@ import os.log
 final class AlarmSoundManager {
     static let shared = AlarmSoundManager()
 
-    static let stopActionId  = "STOP_ALARM"
-    static let categoryId    = "ALARM_CATEGORY"
+    static let stopActionId = "STOP_ALARM"
+    static let categoryId   = "ALARM_CATEGORY"
 
     private var player: AVAudioPlayer?
     private var stopTimer: Timer?
+    private var startedAt: Date?
 
     private init() {}
 
@@ -44,6 +45,7 @@ final class AlarmSoundManager {
             player = try AVAudioPlayer(contentsOf: url)
             player?.numberOfLoops = -1
             player?.play()
+            startedAt = Date()
             glog("avvio")
         } catch {
             glog("errore player: \(error.localizedDescription)")
@@ -57,6 +59,7 @@ final class AlarmSoundManager {
     func stop() {
         stopTimer?.invalidate()
         stopTimer = nil
+        startedAt = nil
         guard player?.isPlaying == true else { return }
         player?.stop()
         player = nil
@@ -65,6 +68,12 @@ final class AlarmSoundManager {
     }
 
     var isPlaying: Bool { player?.isPlaying == true }
+
+    /// Secondi trascorsi dall'avvio (0 se non in riproduzione)
+    var secondsSinceStart: TimeInterval {
+        guard let s = startedAt else { return 0 }
+        return Date().timeIntervalSince(s)
+    }
 
     private func glog(_ msg: String) {
         os_log("GUARDROOM AlarmSoundManager %{public}@", type: .fault, msg)
