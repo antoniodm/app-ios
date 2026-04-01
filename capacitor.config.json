@@ -3,7 +3,7 @@
   "appName": "Guardroom24",
   "webDir": "web-placeholder",
   "server": {
-    "url": "https://davinci.perfortuna.it",
+    "url": "https://guardroom24.it",
     "cleartext": false
   },
   "plugins": {
