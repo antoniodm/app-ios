@@ -11,8 +11,25 @@ final class AlarmSoundManager {
     private var player: AVAudioPlayer?
     private var stopTimer: Timer?
     private var startedAt: Date?
+    private var interruptionObserver: NSObjectProtocol?
 
-    private init() {}
+    private init() {
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let self = self,
+                  let typeValue = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
+            if type == .ended, self.startedAt != nil {
+                // Ripristina la sessione e rilancia il loop dopo l'interruzione
+                try? AVAudioSession.sharedInstance().setActive(true)
+                self.player?.play()
+                self.glog("resume dopo interruzione")
+            }
+        }
+    }
 
     func registerNotificationCategory() {
         let stopAction = UNNotificationAction(

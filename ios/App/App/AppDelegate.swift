@@ -53,8 +53,10 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         if notification.request.content.categoryIdentifier == AlarmSoundManager.categoryId {
             AlarmSoundManager.shared.start()
+            completionHandler([.banner, .badge])  // niente .sound: il loop lo gestiamo noi
+        } else {
+            completionHandler([.banner, .sound, .badge])
         }
-        completionHandler([.banner, .sound, .badge])
     }
 
     // Tap su notifica o azione (da background/killed o foreground)
