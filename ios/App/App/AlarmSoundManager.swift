@@ -2,7 +2,7 @@ import AVFoundation
 import UserNotifications
 import os.log
 
-final class AlarmSoundManager {
+final class AlarmSoundManager: NSObject {
     static let shared = AlarmSoundManager()
 
     static let stopActionId = "STOP_ALARM"
@@ -14,7 +14,7 @@ final class AlarmSoundManager {
     private var startedAt: Date?
     private var interruptionObserver: NSObjectProtocol?
 
-    private init() {
+    override private init() {
         interruptionObserver = NotificationCenter.default.addObserver(
             forName: AVAudioSession.interruptionNotification,
             object: nil,
