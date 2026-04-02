@@ -31,7 +31,6 @@ class CameraMatrixWebRTCViewController: UIViewController {
     private var videoW: [Int] = []
     private var videoH: [Int] = []
     private var lastFrameTime: [TimeInterval] = []
-    private var frameCount: [Int] = []
 
     private static let factory: RTCPeerConnectionFactory = {
         RTCInitializeSSL()
@@ -81,7 +80,6 @@ class CameraMatrixWebRTCViewController: UIViewController {
         videoW        = Array(repeating: 0,     count: count)
         videoH        = Array(repeating: 0,     count: count)
         lastFrameTime = Array(repeating: 0,     count: count)
-        frameCount    = Array(repeating: 0,     count: count)
 
         setupScrollView()
         setupControls()
@@ -153,6 +151,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
     fileprivate func attachTrack(_ track: RTCVideoTrack, idx: Int) {
         assert(Thread.isMainThread)
         guard enabled[idx], !failed[idx] else { return }
+        guard videoTracks[idx] == nil else { return }
 
         let renderer = RTCMTLVideoView(frame: .zero)
         renderer.videoContentMode = .scaleAspectFit
@@ -351,7 +350,6 @@ class CameraMatrixWebRTCViewController: UIViewController {
                             guard let self = self, self.enabled[idx], !self.failed[idx],
                                   let wrapper = self.wrapperViews[idx] else { return }
                             self.setupHlsPlayer(idx: idx, url: url, wrapper: wrapper)
-                            self.avPlayers[idx]?.play()
                         }
                     }
                 }
@@ -389,7 +387,6 @@ class CameraMatrixWebRTCViewController: UIViewController {
 
     fileprivate func onFrame(idx: Int, width: Int, height: Int) {
         lastFrameTime[idx] = Date().timeIntervalSince1970
-        frameCount[idx] += 1
         if videoW[idx] == 0 { videoW[idx] = width; videoH[idx] = height }
     }
 
@@ -484,7 +481,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
         failed[i] = false
         isHlsFallback[i] = false
         hlsFailCount[i] = 0
-        videoW[i] = 0; videoH[i] = 0; lastFrameTime[i] = 0; frameCount[i] = 0
+        videoW[i] = 0; videoH[i] = 0; lastFrameTime[i] = 0
         startWhep(url: streamUrls[i], idx: i)
         updateColsRows()
         buildGrid()
@@ -551,7 +548,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
         frameSinks[i] = nil
         videoTracks[i] = nil
         rendererViews[i] = nil
-        videoW[i] = 0; videoH[i] = 0; lastFrameTime[i] = 0; frameCount[i] = 0
+        videoW[i] = 0; videoH[i] = 0; lastFrameTime[i] = 0
         // Svuota il wrapper esistente (se presente) ma non lo rimuove dalla griglia
         if let wrapper = wrapperViews[i] {
             wrapper.subviews.forEach { $0.removeFromSuperview() }
@@ -585,7 +582,6 @@ class CameraMatrixWebRTCViewController: UIViewController {
     private func releaseAll() {
         hideTimer?.invalidate(); hideTimer = nil
         watchdogTimer?.invalidate(); watchdogTimer = nil
-        avKVOTokens.forEach { _ = $0 }  // auto-invalidate
         avKVOTokens.removeAll()
         delegates.removeAll()
         frameSinks.removeAll()
@@ -631,17 +627,6 @@ private class WhepDelegate: NSObject, RTCPeerConnectionDelegate {
     func peerConnection(_ peerConnection: RTCPeerConnection,
                         didChange newState: RTCPeerConnectionState) {
         glog("Cam \(self.idx): connState=\(newState.rawValue)")
-        if newState == .connected {
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self, let vc = self.vc else { return }
-                for transceiver in peerConnection.transceivers where transceiver.mediaType == .video {
-                    if let track = transceiver.receiver.track as? RTCVideoTrack {
-                        vc.attachTrack(track, idx: self.idx)
-                        glog("Cam \(self.idx): track attaccata via .connected")
-                    }
-                }
-            }
-        }
         if newState == .failed {
             glog("Cam \(self.idx): failed -> restart in 3s")
             DispatchQueue.global().asyncAfter(deadline: .now() + 3) { [weak self] in

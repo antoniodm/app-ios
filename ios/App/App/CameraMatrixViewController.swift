@@ -1,5 +1,10 @@
 import UIKit
 import AVFoundation
+import os
+
+private func glog(_ msg: String) {
+    os_log("GUARDROOM %{public}@", type: .fault, msg)
+}
 
 class CameraMatrixViewController: UIViewController {
 
@@ -100,7 +105,7 @@ class CameraMatrixViewController: UIViewController {
             queue: .main
         ) { [weak self] _ in
             guard let self = self, self.enabled[i] else { return }
-            NSLog("GUARDROOM Cam %d: ENDED → riconnessione in 2s", i)
+            glog("Cam \(i): ENDED → riconnessione in 2s")
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
                 guard let self = self, self.enabled[i], let p = self.players[i] else { return }
                 p.seek(to: .zero)
@@ -110,7 +115,7 @@ class CameraMatrixViewController: UIViewController {
         endObservers[i] = obs
 
         player.play()
-        NSLog("GUARDROOM Cam %d: avvio → %@", i, streamUrls[i])
+        glog("Cam \(i): avvio → \(streamUrls[i])")
     }
 
     private func setupControls() {
@@ -157,7 +162,7 @@ class CameraMatrixViewController: UIViewController {
         let cellH   = cellW * 9.0 / 16.0
 
         let active = (0..<streamUrls.count).filter { enabled[$0] && playerViews[$0] != nil }
-        NSLog("GUARDROOM buildGrid: %d stream attivi, griglia %dx%d", active.count, cols, rows)
+        glog("buildGrid: \(active.count) stream attivi, griglia \(cols)x\(rows)")
 
         var pos = 0
         var yOffset: CGFloat = 0
@@ -224,7 +229,7 @@ class CameraMatrixViewController: UIViewController {
 
     private func enableStream(_ i: Int) {
         guard !enabled[i] else { return }
-        NSLog("GUARDROOM Cam %d (%@): enable", i, streamNames[i])
+        glog("Cam \(i) (\(streamNames[i])): enable")
         enabled[i] = true
         createPlayer(at: i)
         updateColsRows()
@@ -235,7 +240,7 @@ class CameraMatrixViewController: UIViewController {
 
     private func disableStream(_ i: Int) {
         guard enabled[i] else { return }
-        NSLog("GUARDROOM Cam %d (%@): disable", i, streamNames[i])
+        glog("Cam \(i) (\(streamNames[i])): disable")
         enabled[i] = false
         if let obs = endObservers[i] { NotificationCenter.default.removeObserver(obs) }
         endObservers[i] = nil
@@ -268,7 +273,7 @@ class CameraMatrixViewController: UIViewController {
         for i in 0..<players.count {
             guard enabled[i], let player = players[i],
                   let item = player.currentItem, item.status == .failed else { continue }
-            NSLog("GUARDROOM Cam %d: errore AVPlayerItem → riconnessione", i)
+            glog("Cam \(i): errore AVPlayerItem → riconnessione")
             if let obs = endObservers[i] { NotificationCenter.default.removeObserver(obs) }
             endObservers[i] = nil
             playerLayers[i]?.removeFromSuperlayer()

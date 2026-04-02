@@ -8,7 +8,6 @@ public class ExoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "ExoPlayerPlugin"
     public let jsName = "ExoPlayer"
     public let pluginMethods: [CAPPluginMethod] = [
-        CAPPluginMethod(name: "askPlayerType", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openMatrix",    returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openStream",    returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "closeStream",   returnType: CAPPluginReturnPromise),
@@ -19,29 +18,6 @@ public class ExoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
 
     static weak var sharedBridge: CAPBridgeProtocol?
     static var pendingCloseJs: String?
-
-    /**
-     * Mostra il dialog di scelta tipo player e restituisce la scelta al JS.
-     */
-    @objc func askPlayerType(_ call: CAPPluginCall) {
-        DispatchQueue.main.async {
-            let alert = UIAlertController(
-                title: "Control Room",
-                message: "Scegli il tipo di player:",
-                preferredStyle: .alert
-            )
-            alert.addAction(UIAlertAction(title: "WebRTC  (bassa latenza)", style: .default) { _ in
-                var result = JSObject(); result["type"] = "webrtc"; call.resolve(result)
-            })
-            alert.addAction(UIAlertAction(title: "HLS  (compatibile)", style: .default) { _ in
-                var result = JSObject(); result["type"] = "hls"; call.resolve(result)
-            })
-            alert.addAction(UIAlertAction(title: "Annulla", style: .cancel) { _ in
-                call.reject("cancelled")
-            })
-            self.bridge?.viewController?.present(alert, animated: true)
-        }
-    }
 
     /**
      * Apre la matrix di stream.
@@ -185,17 +161,7 @@ public class ExoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
 
     // MARK: - Helpers URL (per compatibilità con Android)
 
-    /** Converte URL HLS in URL RTSP (non usato su iOS — AVPlayer non supporta RTSP) */
-    static func hlsToRtsp(_ hlsUrl: String) -> String {
-        return hlsUrl
-            .replacingOccurrences(of: "https://",    with: "rtsp://")
-            .replacingOccurrences(of: "ssb-pull.",   with: "ssb.")
-            .replacingOccurrences(of: "ssa-pull.",   with: "ssa.")
-            .replacingOccurrences(of: ":2053/",      with: ":8554/")
-            .replacingOccurrences(of: "/index.m3u8", with: "")
-    }
-
-    /** Converte URL HLS in URL WHEP (non usato su iOS senza libreria WebRTC) */
+    /** Converte URL HLS in URL WHEP */
     static func hlsToWhep(_ hlsUrl: String) -> String {
         return hlsUrl
             .replacingOccurrences(of: ":2053/",      with: ":2096/")
