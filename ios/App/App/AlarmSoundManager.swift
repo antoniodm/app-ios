@@ -15,6 +15,7 @@ final class AlarmSoundManager: NSObject {
     private var interruptionObserver: NSObjectProtocol?
 
     override private init() {
+        super.init()
         interruptionObserver = NotificationCenter.default.addObserver(
             forName: AVAudioSession.interruptionNotification,
             object: nil,
