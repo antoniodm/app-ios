@@ -110,16 +110,34 @@ public class ExoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
         guard let urlStr = call.getString("url"), let url = URL(string: urlStr) else {
             call.reject("URL mancante"); return
         }
-        DispatchQueue.main.async {
-            let player = AVPlayer(url: url)
-            let vc = AVPlayerViewController()
-            vc.player = player
-            vc.modalPresentationStyle = .fullScreen
-            self.streamPlayerVC = vc
-            self.bridge?.viewController?.present(vc, animated: true) {
-                player.play()
+        // Copia i cookie dalla WKWebView per autenticare la richiesta AVPlayer (sessione PHP)
+        bridge?.webView?.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
+            guard let self = self else { return }
+            let host = url.host ?? ""
+            let cookieHeader = cookies
+                .filter { c in
+                    let domain = c.domain.hasPrefix(".") ? String(c.domain.dropFirst()) : c.domain
+                    return host == domain || host.hasSuffix("." + domain)
+                }
+                .map { "\($0.name)=\($0.value)" }
+                .joined(separator: "; ")
+            DispatchQueue.main.async {
+                var assetOptions: [String: Any] = [:]
+                if !cookieHeader.isEmpty {
+                    assetOptions["AVURLAssetHTTPHeaderFieldsKey"] = ["Cookie": cookieHeader]
+                }
+                let asset = AVURLAsset(url: url, options: assetOptions)
+                let item = AVPlayerItem(asset: asset)
+                let player = AVPlayer(playerItem: item)
+                let vc = AVPlayerViewController()
+                vc.player = player
+                vc.modalPresentationStyle = .fullScreen
+                self.streamPlayerVC = vc
+                self.bridge?.viewController?.present(vc, animated: true) {
+                    player.play()
+                }
+                call.resolve()
             }
-            call.resolve()
         }
     }
 
