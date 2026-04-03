@@ -20,7 +20,6 @@
 		BB00000100040000ABCD0001 /* CameraMatrixViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000100030000ABCD0001 /* CameraMatrixViewController.swift */; };
 		BB00000100060000ABCD0001 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000100050000ABCD0001 /* MainViewController.swift */; };
 		BB00000100080000ABCD0001 /* CameraMatrixWebRTCViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000100070000ABCD0001 /* CameraMatrixWebRTCViewController.swift */; };
-		BB000001000A0000ABCD0001 /* AlarmSoundManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000001000B0000ABCD0001 /* AlarmSoundManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -39,7 +38,6 @@
 		BB00000100030000ABCD0001 /* CameraMatrixViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraMatrixViewController.swift; sourceTree = "<group>"; };
 		BB00000100050000ABCD0001 /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
 		BB00000100070000ABCD0001 /* CameraMatrixWebRTCViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraMatrixWebRTCViewController.swift; sourceTree = "<group>"; };
-		BB000001000B0000ABCD0001 /* AlarmSoundManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlarmSoundManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -86,7 +84,6 @@
 				BB00000100030000ABCD0001 /* CameraMatrixViewController.swift */,
 				BB00000100050000ABCD0001 /* MainViewController.swift */,
 				BB00000100070000ABCD0001 /* CameraMatrixWebRTCViewController.swift */,
-				BB000001000B0000ABCD0001 /* AlarmSoundManager.swift */,
 				50B271D01FEDC1A000F3C39B /* public */,
 			);
 			path = App;
@@ -179,7 +176,6 @@
 				BB00000100040000ABCD0001 /* CameraMatrixViewController.swift in Sources */,
 				BB00000100060000ABCD0001 /* MainViewController.swift in Sources */,
 				BB00000100080000ABCD0001 /* CameraMatrixWebRTCViewController.swift in Sources */,
-				BB000001000A0000ABCD0001 /* AlarmSoundManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
