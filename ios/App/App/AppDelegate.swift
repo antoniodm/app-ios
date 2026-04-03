@@ -9,23 +9,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         UNUserNotificationCenter.current().delegate = self
-        AlarmSoundManager.shared.registerNotificationCategory()
         return true
     }
 
     func applicationWillResignActive(_ application: UIApplication) {}
     func applicationDidEnterBackground(_ application: UIApplication) {}
     func applicationWillEnterForeground(_ application: UIApplication) {}
-
-    func applicationDidBecomeActive(_ application: UIApplication) {
-        // Ferma l'allarme quando l'utente apre l'app, ma solo se suona da più di 3 secondi.
-        // Evita di fermarlo subito dopo l'avvio da tap notifica, dove applicationDidBecomeActive
-        // può scattare subito prima o dopo didReceive a seconda della versione iOS.
-        if AlarmSoundManager.shared.secondsSinceStart > 3 {
-            AlarmSoundManager.shared.stop()
-        }
-    }
-
+    func applicationDidBecomeActive(_ application: UIApplication) {}
     func applicationWillTerminate(_ application: UIApplication) {}
 
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
@@ -47,27 +37,17 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
 extension AppDelegate: UNUserNotificationCenterDelegate {
 
-    // App in foreground: notifica arriva mentre l'app è aperta
+    // App in foreground: mostra banner e suona (alarm.wav gestito da iOS via payload APNs)
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        if notification.request.content.categoryIdentifier == AlarmSoundManager.categoryId {
-            AlarmSoundManager.shared.start()
-            completionHandler([.banner, .badge])  // niente .sound: il loop lo gestiamo noi
-        } else {
-            completionHandler([.banner, .sound, .badge])
-        }
+        completionHandler([.banner, .sound, .badge])
     }
 
-    // Tap su notifica o azione (da background/killed o foreground)
+    // Tap su notifica
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
-        if response.actionIdentifier == AlarmSoundManager.stopActionId {
-            AlarmSoundManager.shared.stop()
-        } else if response.notification.request.content.categoryIdentifier == AlarmSoundManager.categoryId {
-            AlarmSoundManager.shared.start()
-        }
         completionHandler()
     }
 }
