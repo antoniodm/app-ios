@@ -8,12 +8,10 @@ workflows:
       app_store_connect: Codemagic
 
     environment:
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: it.guardroom24.app
       vars:
         XCODE_PROJECT: "ios/App/App.xcodeproj"
         XCODE_SCHEME: "App"
+        BUNDLE_ID: "it.guardroom24.app"
         APP_STORE_APPLE_ID: "6762183917"
       node: latest
 
@@ -56,6 +54,18 @@ workflows:
           grep -n "CameraMatrixWebRTC" ios/App/App.xcodeproj/project.pbxproj || echo "NOT FOUND in pbxproj"
           echo "=== xcodebuild showBuildSettings (raw) ==="
           xcodebuild -project ios/App/App.xcodeproj -scheme App -showBuildSettings 2>&1 | tail -30 || true
+
+      - name: Set up keychain
+        script: keychain initialize
+
+      - name: Fetch signing files
+        script: |
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+
+      - name: Add certificates to keychain
+        script: keychain add-certificates
 
       - name: Set up code signing
         script: xcode-project use-profiles
