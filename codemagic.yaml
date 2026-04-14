@@ -8,8 +8,8 @@ workflows:
       ios_signing:
         distribution_type: app_store
         bundle_identifier: it.guardroom24.app
-      app_store_connect:
-        auth: integration
+      integrations:
+        app_store_connect: Codemagic
       vars:
         XCODE_PROJECT: "ios/App/App.xcodeproj"
         XCODE_SCHEME: "App"
