@@ -6,11 +6,14 @@ workflows:
 
     environment:
       ios_signing:
-        distribution_type: ad_hoc
-        bundle_identifier: com.octopusiot.example
+        distribution_type: app_store
+        bundle_identifier: it.guardroom24.app
+      app_store_connect:
+        auth: integration
       vars:
         XCODE_PROJECT: "ios/App/App.xcodeproj"
         XCODE_SCHEME: "App"
+        APP_STORE_APPLE_ID: "6762183917"
       node: latest
 
     scripts:
@@ -65,3 +68,9 @@ workflows:
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: false
+        submit_to_app_store: false
