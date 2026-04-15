@@ -11,6 +11,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
 
     var streamUrls: [String] = []
     var streamNames: [String] = []
+    var initialEnabled: [Bool]? = nil
 
     var enabled: [Bool] = []
     // true = tutti i retry (WHEP + HLS) esauriti, cam non raggiungibile
@@ -63,7 +64,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
         view.backgroundColor = .black
 
         let count = streamUrls.count
-        enabled       = Array(repeating: true,  count: count)
+        enabled       = initialEnabled ?? Array(repeating: true, count: count)
         failed        = Array(repeating: false, count: count)
         peerConnections = Array(repeating: nil, count: count)
         delegates     = Array(repeating: nil,   count: count)
@@ -85,8 +86,8 @@ class CameraMatrixWebRTCViewController: UIViewController {
         setupControls()
         updateColsRows()
 
-        // Avvia ogni stream indipendentemente; la griglia si aggiorna cam per cam
-        for i in 0..<count { startWhep(url: streamUrls[i], idx: i) }
+        // Avvia solo gli stream abilitati; la griglia si aggiorna cam per cam
+        for i in 0..<count { if enabled[i] { startWhep(url: streamUrls[i], idx: i) } }
         buildGrid()
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap))

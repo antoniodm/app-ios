@@ -62,33 +62,24 @@ public class ExoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             selVC.onConfirm = { [weak self] checked in
                 guard let self = self else { return }
-                var selUrls:  [String] = []
-                var selNames: [String] = []
-                var body = ""
-                for (i, isChecked) in checked.enumerated() {
-                    if isChecked {
-                        selUrls.append(hlsUrls[i])
-                        selNames.append(names[i])
-                        body += perCamCloseJs[i]
-                    }
-                }
-                guard !selUrls.isEmpty else { return }
-                ExoPlayerPlugin.pendingCloseJs = "(function(){\(body)})();"
-                self.launchMatrix(type: "webrtc", hlsUrls: selUrls, names: selNames)
+                guard checked.contains(true) else { return }
+                ExoPlayerPlugin.pendingCloseJs = allCloseJs
+                self.launchMatrix(type: "webrtc", hlsUrls: hlsUrls, names: names, initialEnabled: checked)
             }
             selVC.modalPresentationStyle = .pageSheet
             self.bridge?.viewController?.present(selVC, animated: true)
         }
     }
 
-    private func launchMatrix(type: String, hlsUrls: [String], names: [String]) {
+    private func launchMatrix(type: String, hlsUrls: [String], names: [String], initialEnabled: [Bool]? = nil) {
         DispatchQueue.main.async {
             let vc: UIViewController
             switch type {
             case "webrtc":
                 let webrtcVc = CameraMatrixWebRTCViewController()
-                webrtcVc.streamUrls  = hlsUrls.map { ExoPlayerPlugin.hlsToWhep($0) }
-                webrtcVc.streamNames = names
+                webrtcVc.streamUrls      = hlsUrls.map { ExoPlayerPlugin.hlsToWhep($0) }
+                webrtcVc.streamNames     = names
+                webrtcVc.initialEnabled  = initialEnabled
                 vc = webrtcVc
             case "rtsp":
                 // AVPlayer non supporta RTSP su iOS → usa HLS come fallback
