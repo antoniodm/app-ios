@@ -1,6 +1,6 @@
 workflows:
   ios-release:
-    name: Guardroom24 iOS
+    name: Guardroom24 iOS — TestFlight
     max_build_duration: 60
     instance_type: mac_mini_m2
 
@@ -77,8 +77,8 @@ workflows:
         submit_to_testflight: true
         submit_to_app_store: false
 
-  ios-adhoc:
-    name: Guardroom24 iOS AdHoc
+  ios-adhoc-guardroom:
+    name: Guardroom24 iOS AdHoc — guardroom24.it
     max_build_duration: 60
     instance_type: mac_mini_m2
 
@@ -93,11 +93,93 @@ workflows:
         XCODE_PROJECT: "ios/App/App.xcodeproj"
         XCODE_SCHEME: "App"
         BUNDLE_ID: "it.guardroom24.app"
+        SERVER_URL: "https://guardroom24.it"
       node: latest
 
     scripts:
       - name: Install npm dependencies
         script: npm install
+
+      - name: Set server URL
+        script: |
+          python3 - << 'PYEOF'
+          import json, os
+          with open('capacitor.config.json') as f: c = json.load(f)
+          c['server']['url'] = os.environ['SERVER_URL']
+          with open('capacitor.config.json', 'w') as f: json.dump(c, f, indent=2)
+          print('Server URL:', os.environ['SERVER_URL'])
+          PYEOF
+
+      - name: Capacitor sync
+        script: npx cap sync ios
+
+      - name: Add WebRTC to CapApp-SPM
+        script: |
+          python3 - << 'PYEOF'
+          path = 'ios/App/CapApp-SPM/Package.swift'
+          c = open(path).read()
+          if 'WebRTCFixed' not in c:
+              c = c.replace(
+                  '    dependencies: [',
+                  '    dependencies: [\n        .package(name: "WebRTC", path: "../WebRTCFixed"),',
+                  1
+              )
+              first = c.index('.product(name: "Capacitor"')
+              c = c[:first] + '.product(name: "WebRTC", package: "WebRTC"),\n                ' + c[first:]
+              open(path, 'w').write(c)
+              print('WebRTC (WebRTCFixed locale) aggiunto a Package.swift')
+          else:
+              print('WebRTC gia presente in Package.swift')
+          PYEOF
+          cat > ios/App/CapApp-SPM/Sources/CapApp-SPM/WebRTCExport.swift << 'SWIFTEOF'
+          @_exported import WebRTC
+          SWIFTEOF
+
+      - name: Set up code signing
+        script: xcode-project use-profiles
+
+      - name: Build iOS IPA
+        script: |
+          xcode-project build-ipa \
+            --project "$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME"
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+
+  ios-adhoc-davinci:
+    name: Guardroom24 iOS AdHoc — davinci.perfortuna.it
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+
+    integrations:
+      app_store_connect: Codemagic
+
+    environment:
+      ios_signing:
+        distribution_type: ad_hoc
+        bundle_identifier: it.guardroom24.app
+      vars:
+        XCODE_PROJECT: "ios/App/App.xcodeproj"
+        XCODE_SCHEME: "App"
+        BUNDLE_ID: "it.guardroom24.app"
+        SERVER_URL: "https://davinci.perfortuna.it"
+      node: latest
+
+    scripts:
+      - name: Install npm dependencies
+        script: npm install
+
+      - name: Set server URL
+        script: |
+          python3 - << 'PYEOF'
+          import json, os
+          with open('capacitor.config.json') as f: c = json.load(f)
+          c['server']['url'] = os.environ['SERVER_URL']
+          with open('capacitor.config.json', 'w') as f: json.dump(c, f, indent=2)
+          print('Server URL:', os.environ['SERVER_URL'])
+          PYEOF
 
       - name: Capacitor sync
         script: npx cap sync ios

@@ -8,10 +8,11 @@ public class ExoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "ExoPlayerPlugin"
     public let jsName = "ExoPlayer"
     public let pluginMethods: [CAPPluginMethod] = [
-        CAPPluginMethod(name: "openMatrix",    returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "openStream",    returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "closeStream",   returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "downloadFile",  returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openMatrix",     returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "selectCameras",  returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openStream",     returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "closeStream",    returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "downloadFile",   returnType: CAPPluginReturnPromise),
     ]
 
     private weak var streamPlayerVC: AVPlayerViewController?
@@ -25,10 +26,9 @@ public class ExoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
-        var hlsUrls:      [String] = []
-        var names:        [String] = []
-        var perCamCloseJs:[String] = []
-        var allCloseJsBody = ""
+        var hlsUrls: [String] = []
+        var names:   [String] = []
+        var closeJs = "(function(){"
 
         for (i, stream) in streams.enumerated() {
             let url  = stream["url"]  as? String ?? ""
@@ -39,72 +39,75 @@ public class ExoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
             let seriale            = stream["seriale"]            as? String ?? ""
             let streamSessionCamId = stream["streamSessionCamId"] as? String ?? ""
             if !seriale.isEmpty && !streamSessionCamId.isEmpty {
-                let js = "fetch('/dashboard/controlroomremovecam/\(seriale)/\(streamSessionCamId)',{method:'POST',credentials:'same-origin'});"
-                allCloseJsBody += js
-                perCamCloseJs.append(js)
-            } else {
-                perCamCloseJs.append("")
+                closeJs += "fetch('/dashboard/controlroomremovecam/\(seriale)/\(streamSessionCamId)',{method:'POST',credentials:'same-origin'});"
             }
         }
+        closeJs += "})();"
 
-        let allCloseJs = "(function(){\(allCloseJsBody)})();"
-        ExoPlayerPlugin.sharedBridge = bridge
+        ExoPlayerPlugin.sharedBridge    = bridge
+        ExoPlayerPlugin.pendingCloseJs  = closeJs
+
+        launchMatrix(hlsUrls: hlsUrls, names: names)
         call.resolve()
+    }
+
+    /**
+     * Mostra UI di selezione telecamere con anteprime.
+     * Input:  { cameras: [{name, thumbnail, seriale, camId}] }
+     * Output: { selected: [0, 2, ...] }
+     */
+    @objc func selectCameras(_ call: CAPPluginCall) {
+        guard let cameras = call.getArray("cameras") as? [[String: Any]], !cameras.isEmpty else {
+            call.resolve(["selected": []])
+            return
+        }
+
+        let names = cameras.map { $0["name"] as? String ?? "Cam" }
+        let thumbnails: [UIImage?] = cameras.map { cam in
+            guard let thumb = cam["thumbnail"] as? String,
+                  let comma = thumb.firstIndex(of: ",") else { return nil }
+            let b64 = String(thumb[thumb.index(after: comma)...])
+            guard let data = Data(base64Encoded: b64) else { return nil }
+            return UIImage(data: data)
+        }
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             let selVC = CameraSelectionViewController()
-            selVC.cameraNames = names
-            selVC.onAll = { [weak self] in
-                guard let self = self else { return }
-                ExoPlayerPlugin.pendingCloseJs = allCloseJs
-                self.launchMatrix(type: "webrtc", hlsUrls: hlsUrls, names: names)
+            selVC.cameraNames  = names
+            selVC.thumbnails   = thumbnails
+            selVC.onAll = {
+                let indices = Array(0..<cameras.count)
+                call.resolve(["selected": indices])
             }
-            selVC.onConfirm = { [weak self] checked in
-                guard let self = self else { return }
-                guard checked.contains(true) else { return }
-                ExoPlayerPlugin.pendingCloseJs = allCloseJs
-                self.launchMatrix(type: "webrtc", hlsUrls: hlsUrls, names: names, initialEnabled: checked)
+            selVC.onConfirm = { checked in
+                let indices = checked.enumerated().compactMap { $0.element ? $0.offset : nil }
+                call.resolve(["selected": indices])
+            }
+            selVC.onCancel = {
+                call.resolve(["selected": []])
             }
             selVC.modalPresentationStyle = .pageSheet
             self.bridge?.viewController?.present(selVC, animated: true)
         }
     }
 
-    private func launchMatrix(type: String, hlsUrls: [String], names: [String], initialEnabled: [Bool]? = nil) {
+    private func launchMatrix(hlsUrls: [String], names: [String]) {
         DispatchQueue.main.async {
-            let vc: UIViewController
-            switch type {
-            case "webrtc":
-                let webrtcVc = CameraMatrixWebRTCViewController()
-                webrtcVc.streamUrls      = hlsUrls.map { ExoPlayerPlugin.hlsToWhep($0) }
-                webrtcVc.streamNames     = names
-                webrtcVc.initialEnabled  = initialEnabled
-                vc = webrtcVc
-            case "rtsp":
-                // AVPlayer non supporta RTSP su iOS → usa HLS come fallback
-                let hlsVc = CameraMatrixViewController()
-                hlsVc.streamUrls  = hlsUrls
-                hlsVc.streamNames = names
-                vc = hlsVc
-            default: // "hls"
-                let hlsVc = CameraMatrixViewController()
-                hlsVc.streamUrls  = hlsUrls
-                hlsVc.streamNames = names
-                vc = hlsVc
-            }
-            vc.modalPresentationStyle = .overFullScreen
-            self.bridge?.viewController?.present(vc, animated: false)
+            let webrtcVc = CameraMatrixWebRTCViewController()
+            webrtcVc.streamUrls  = hlsUrls.map { ExoPlayerPlugin.hlsToWhep($0) }
+            webrtcVc.streamNames = names
+            webrtcVc.modalPresentationStyle = .overFullScreen
+            self.bridge?.viewController?.present(webrtcVc, animated: false)
         }
     }
 
-    // MARK: - openStream / closeStream (video registrato: MP4, ecc.)
+    // MARK: - openStream / closeStream
 
     @objc func openStream(_ call: CAPPluginCall) {
         guard let urlStr = call.getString("url"), let url = URL(string: urlStr) else {
             call.reject("URL mancante"); return
         }
-        // Copia i cookie dalla WKWebView per autenticare la richiesta AVPlayer (sessione PHP)
         bridge?.webView?.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
             guard let self = self else { return }
             let host = url.host ?? ""
@@ -135,12 +138,10 @@ public class ExoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    /// Scarica un file dal server (con cookie di sessione) e mostra lo share sheet iOS.
     @objc func downloadFile(_ call: CAPPluginCall) {
         guard let urlStr = call.getString("url"), let url = URL(string: urlStr) else {
             call.reject("URL mancante"); return
         }
-        // Copia i cookie dalla WKWebView a URLSession così la sessione autenticata viene usata
         bridge?.webView?.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
             guard let self = self else { return }
             for cookie in cookies { HTTPCookieStorage.shared.setCookie(cookie) }
@@ -177,16 +178,13 @@ public class ExoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    // MARK: - Helpers URL (per compatibilità con Android)
+    // MARK: - Helpers
 
-    /** Converte URL HLS in URL WHEP */
     static func hlsToWhep(_ hlsUrl: String) -> String {
         return hlsUrl
             .replacingOccurrences(of: ":2053/",      with: ":2096/")
             .replacingOccurrences(of: "/index.m3u8", with: "/whep")
     }
-
-    // MARK: - Close callback
 
     static func executeClose() {
         guard let js = pendingCloseJs else { return }
@@ -201,9 +199,11 @@ public class ExoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
 // MARK: - Camera selection dialog
 
 private final class CameraSelectionViewController: UIViewController {
-    var cameraNames: [String] = []
+    var cameraNames: [String]   = []
+    var thumbnails:  [UIImage?] = []
     var onConfirm: (([Bool]) -> Void)?
-    var onAll: (() -> Void)?
+    var onAll:     (() -> Void)?
+    var onCancel:  (() -> Void)?
 
     private var checked: [Bool] = []
     private var tableView: UITableView!
@@ -215,12 +215,18 @@ private final class CameraSelectionViewController: UIViewController {
         setupUI()
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        presentationController?.delegate = self
+    }
+
     private func setupUI() {
         tableView = UITableView(frame: .zero, style: .plain)
         tableView.backgroundColor = .black
-        tableView.separatorColor = UIColor.gray.withAlphaComponent(0.3)
+        tableView.separatorColor  = UIColor.gray.withAlphaComponent(0.3)
+        tableView.rowHeight       = 72
         tableView.dataSource = self
-        tableView.delegate = self
+        tableView.delegate   = self
         tableView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(tableView)
 
@@ -253,8 +259,8 @@ private final class CameraSelectionViewController: UIViewController {
     private func makeBtn(_ title: String) -> UIButton {
         var config = UIButton.Configuration.filled()
         config.title = title
-        config.baseForegroundColor = .white
-        config.baseBackgroundColor = UIColor(white: 0.2, alpha: 1)
+        config.baseForegroundColor   = .white
+        config.baseBackgroundColor   = UIColor(white: 0.2, alpha: 1)
         config.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 24, bottom: 12, trailing: 24)
         let btn = UIButton(configuration: config)
         btn.translatesAutoresizingMaskIntoConstraints = false
@@ -280,17 +286,28 @@ extension CameraSelectionViewController: UITableViewDataSource, UITableViewDeleg
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "cam")
             ?? UITableViewCell(style: .default, reuseIdentifier: "cam")
-        cell.textLabel?.text = cameraNames[indexPath.row]
-        cell.textLabel?.textColor = .white
-        cell.backgroundColor = .black
-        cell.tintColor = .white
-        cell.accessoryType = checked[indexPath.row] ? .checkmark : .none
-        cell.selectionStyle = .none
+        let thumb = indexPath.row < thumbnails.count ? thumbnails[indexPath.row] : nil
+        cell.imageView?.image       = thumb ?? UIImage(systemName: "video.slash")
+        cell.imageView?.tintColor   = .gray
+        cell.imageView?.contentMode = .scaleAspectFill
+        cell.imageView?.clipsToBounds = true
+        cell.textLabel?.text        = cameraNames[indexPath.row]
+        cell.textLabel?.textColor   = .white
+        cell.backgroundColor        = .black
+        cell.tintColor              = .white
+        cell.accessoryType          = checked[indexPath.row] ? .checkmark : .none
+        cell.selectionStyle         = .none
         return cell
     }
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         checked[indexPath.row].toggle()
         tableView.reloadRows(at: [indexPath], with: .none)
+    }
+}
+
+extension CameraSelectionViewController: UIAdaptivePresentationControllerDelegate {
+    func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+        onCancel?()
     }
 }
