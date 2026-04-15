@@ -47,7 +47,27 @@ public class ExoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
         ExoPlayerPlugin.sharedBridge    = bridge
         ExoPlayerPlugin.pendingCloseJs  = closeJs
 
-        launchMatrix(hlsUrls: hlsUrls, names: names)
+        let allCamerasList = call.getArray("allCameras") as? [[String: Any]] ?? []
+        let allCamNames = allCamerasList.map { $0["name"] as? String ?? "" }
+        let allCamThumbs: [UIImage?] = allCamerasList.map { cam in
+            guard let thumb = cam["thumbnail"] as? String,
+                  let comma = thumb.firstIndex(of: ",") else { return nil }
+            let b64 = String(thumb[thumb.index(after: comma)...])
+            guard let data = Data(base64Encoded: b64) else { return nil }
+            return UIImage(data: data)
+        }
+        // Info completa per consentire di aggiungere cam dal menu in-matrix
+        let allCamInfo: [[String: String]] = allCamerasList.map { cam in
+            [
+                "name":            cam["name"]            as? String ?? "",
+                "seriale":         cam["seriale"]         as? String ?? "",
+                "camId":           cam["camId"]           as? String ?? "",
+                "viewerClientId":  cam["viewerClientId"]  as? String ?? "",
+                "streamSessionId": cam["streamSessionId"] as? String ?? "",
+            ]
+        }
+
+        launchMatrix(hlsUrls: hlsUrls, names: names, allCameraNames: allCamNames, allCameraThumbnails: allCamThumbs, allCameraInfo: allCamInfo)
         call.resolve()
     }
 
@@ -92,11 +112,14 @@ public class ExoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    private func launchMatrix(hlsUrls: [String], names: [String]) {
+    private func launchMatrix(hlsUrls: [String], names: [String], allCameraNames: [String] = [], allCameraThumbnails: [UIImage?] = [], allCameraInfo: [[String: String]] = []) {
         DispatchQueue.main.async {
             let webrtcVc = CameraMatrixWebRTCViewController()
-            webrtcVc.streamUrls  = hlsUrls.map { ExoPlayerPlugin.hlsToWhep($0) }
-            webrtcVc.streamNames = names
+            webrtcVc.streamUrls          = hlsUrls.map { ExoPlayerPlugin.hlsToWhep($0) }
+            webrtcVc.streamNames         = names
+            webrtcVc.allCameraNames      = allCameraNames.isEmpty ? names : allCameraNames
+            webrtcVc.allCameraThumbnails = allCameraThumbnails
+            webrtcVc.allCameraInfo       = allCameraInfo
             webrtcVc.modalPresentationStyle = .overFullScreen
             self.bridge?.viewController?.present(webrtcVc, animated: false)
         }
@@ -211,7 +234,7 @@ private final class CameraSelectionViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
-        checked = Array(repeating: true, count: cameraNames.count)
+        checked = Array(repeating: false, count: cameraNames.count)
         setupUI()
     }
 

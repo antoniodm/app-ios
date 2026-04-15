@@ -11,6 +11,9 @@ class CameraMatrixWebRTCViewController: UIViewController {
 
     var streamUrls: [String] = []
     var streamNames: [String] = []
+    var allCameraNames: [String] = []
+    var allCameraThumbnails: [UIImage?] = []
+    var allCameraInfo: [[String: String]] = []
 
     var enabled: [Bool] = []
     // true = tutti i retry (WHEP + HLS) esauriti, cam non raggiungibile
@@ -448,23 +451,121 @@ class CameraMatrixWebRTCViewController: UIViewController {
     // MARK: - Gestione flussi
 
     @objc private func showStreamsDialog() {
-        let alert = UIAlertController(title: "Flussi", message: nil, preferredStyle: .actionSheet)
-        for (i, name) in streamNames.enumerated() {
-            let mark: String
-            if failed[i]       { mark = "⚠ " }
-            else if enabled[i] { mark = "✓ " }
-            else               { mark = "○ " }
-            alert.addAction(UIAlertAction(title: mark + name + streamInfo(i), style: .default) { [weak self] _ in
-                guard let self = self else { return }
-                if self.failed[i] || !self.enabled[i] { self.enableStream(i) }
-                else { self.disableStream(i) }
-            })
+        let menuVC = StreamsMenuViewController()
+        menuVC.allCameraNames      = allCameraNames
+        menuVC.allCameraThumbnails = allCameraThumbnails
+        menuVC.allCameraInfo       = allCameraInfo
+        menuVC.activeNames         = streamNames
+        menuVC.activeEnabled       = enabled
+        menuVC.activeFailed        = failed
+        menuVC.activeInfo          = streamNames.indices.map { streamInfo($0) }
+        menuVC.onToggle = { [weak self] idx in
+            guard let self = self else { return }
+            if self.failed[idx] || !self.enabled[idx] { self.enableStream(idx) }
+            else { self.disableStream(idx) }
         }
-        alert.addAction(UIAlertAction(title: "OK", style: .cancel))
-        if let pop = alert.popoverPresentationController {
-            pop.sourceView = streamsButton; pop.sourceRect = streamsButton.bounds
+        menuVC.onAddCamera = { [weak self] info in
+            self?.addNewStream(info: info)
         }
-        present(alert, animated: true)
+        menuVC.modalPresentationStyle = .pageSheet
+        present(menuVC, animated: true)
+    }
+
+    // Aggiunge una cam non ancora aperta: fa la chiamata addcam al server, poi avvia WHEP
+    private func addNewStream(info: [String: String]) {
+        let name            = info["name"]            ?? ""
+        let seriale         = info["seriale"]         ?? ""
+        let camId           = info["camId"]           ?? ""
+        let viewerClientId  = info["viewerClientId"]  ?? ""
+        let streamSessionId = info["streamSessionId"] ?? ""
+        guard !seriale.isEmpty, !camId.isEmpty else { return }
+
+        guard let webView = ExoPlayerPlugin.sharedBridge?.webView,
+              let webUrl  = webView.url,
+              let scheme  = webUrl.scheme,
+              let host    = webUrl.host else { return }
+
+        let baseUrl    = "\(scheme)://\(host)"
+        let addCamPath = "\(baseUrl)/dashboard/controlroomaddcam/\(seriale)"
+
+        webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
+            guard let self = self else { return }
+            let cookieHeader = cookies
+                .filter { c in
+                    let domain = c.domain.hasPrefix(".") ? String(c.domain.dropFirst()) : c.domain
+                    return host == domain || host.hasSuffix("." + domain)
+                }
+                .map { "\($0.name)=\($0.value)" }
+                .joined(separator: "; ")
+
+            let camFeTarget = "camera\(self.streamUrls.count + 1)"
+            let bodyStr = [
+                "camFeTarget=\(camFeTarget)",
+                "camId=\(camId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? camId)",
+                "camName=\(name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? name)",
+                "viewerClientId=\(viewerClientId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? viewerClientId)",
+                "streamSessionId=\(streamSessionId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? streamSessionId)",
+            ].joined(separator: "&")
+
+            guard let url = URL(string: addCamPath) else { return }
+            var req = URLRequest(url: url, timeoutInterval: 10)
+            req.httpMethod = "POST"
+            req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            if !cookieHeader.isEmpty { req.setValue(cookieHeader, forHTTPHeaderField: "Cookie") }
+            req.httpBody = bodyStr.data(using: .utf8)
+
+            URLSession.shared.dataTask(with: req) { [weak self] data, _, _ in
+                guard let self = self,
+                      let data = data,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let resp = json["response"] as? [String: Any],
+                      let streamUrl = resp["streamUrl"] as? String,
+                      !streamUrl.isEmpty, streamUrl != "null" else { return }
+
+                let sessionCamId = resp["streamSessionCamId"] as? String ?? ""
+                let whepUrl = streamUrl
+                    .replacingOccurrences(of: ":2053/", with: ":2096/")
+                    .replacingOccurrences(of: "/index.m3u8", with: "/whep")
+
+                // Aggiorna pendingCloseJs con la pulizia di questa cam
+                if !seriale.isEmpty && !sessionCamId.isEmpty {
+                    let extra = "fetch('/dashboard/controlroomremovecam/\(seriale)/\(sessionCamId)',{method:'POST',credentials:'same-origin'});"
+                    if var js = ExoPlayerPlugin.pendingCloseJs {
+                        js = js.replacingOccurrences(of: "})();", with: extra + "})();")
+                        ExoPlayerPlugin.pendingCloseJs = js
+                    }
+                }
+
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    let idx = self.streamUrls.count
+                    self.streamUrls.append(whepUrl)
+                    self.streamNames.append(name)
+                    self.enabled.append(true)
+                    self.failed.append(false)
+                    self.peerConnections.append(nil)
+                    self.delegates.append(nil)
+                    self.frameSinks.append(nil)
+                    self.videoTracks.append(nil)
+                    self.rendererViews.append(nil)
+                    self.wrapperViews.append(nil)
+                    self.avPlayers.append(nil)
+                    self.avLayers.append(nil)
+                    self.avObservers.append(nil)
+                    self.avKVOTokens.append(nil)
+                    self.isHlsFallback.append(false)
+                    self.hlsFailCount.append(0)
+                    self.videoW.append(0)
+                    self.videoH.append(0)
+                    self.lastFrameTime.append(0)
+                    self.startWhep(url: whepUrl, idx: idx)
+                    self.updateColsRows()
+                    self.buildGridSync()
+                    self.streamsButton.setTitle(self.streamsBtnLabel(), for: .normal)
+                    self.streamsButton.sizeToFit()
+                }
+            }.resume()
+        }
     }
 
     private func streamInfo(_ i: Int) -> String {
@@ -671,13 +772,15 @@ private class FrameSink: NSObject, RTCVideoRenderer {
 // MARK: - Streams menu (all cameras)
 
 private final class StreamsMenuViewController: UIViewController {
-    var allCameraNames:      [String]   = []
-    var allCameraThumbnails: [UIImage?] = []
-    var activeNames:         [String]   = []
-    var activeEnabled:       [Bool]     = []
-    var activeFailed:        [Bool]     = []
-    var activeInfo:          [String]   = []
-    var onToggle: ((Int) -> Void)?
+    var allCameraNames:      [String]          = []
+    var allCameraThumbnails: [UIImage?]        = []
+    var allCameraInfo:       [[String: String]] = []
+    var activeNames:         [String]          = []
+    var activeEnabled:       [Bool]            = []
+    var activeFailed:        [Bool]            = []
+    var activeInfo:          [String]          = []
+    var onToggle:     ((Int) -> Void)?
+    var onAddCamera:  (([String: String]) -> Void)?
 
     private var activeIndex: [Int] = []   // activeIndex[i] = index in activeNames for allCameraNames[i], or -1
     private var tableView: UITableView!
@@ -729,7 +832,8 @@ extension StreamsMenuViewController: UITableViewDataSource, UITableViewDelegate 
         cell.imageView?.contentMode = .scaleAspectFill
         cell.imageView?.clipsToBounds = true
         cell.backgroundColor        = .black
-        cell.selectionStyle         = isActive ? .default : .none
+        let hasInfo = i < allCameraInfo.count && !(allCameraInfo[i]["seriale"] ?? "").isEmpty
+        cell.selectionStyle         = (isActive || hasInfo) ? .default : .none
 
         if isActive {
             let enabled = aIdx < activeEnabled.count && activeEnabled[aIdx]
@@ -756,10 +860,13 @@ extension StreamsMenuViewController: UITableViewDataSource, UITableViewDelegate 
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        let aIdx = activeIndex[indexPath.row]
-        guard aIdx >= 0 else { return }
-        dismiss(animated: true) { [weak self] in
-            self?.onToggle?(aIdx)
+        let i    = indexPath.row
+        let aIdx = activeIndex[i]
+        if aIdx >= 0 {
+            dismiss(animated: true) { [weak self] in self?.onToggle?(aIdx) }
+        } else if i < allCameraInfo.count {
+            let info = allCameraInfo[i]
+            dismiss(animated: true) { [weak self] in self?.onAddCamera?(info) }
         }
     }
 }
