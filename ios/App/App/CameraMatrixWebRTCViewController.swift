@@ -515,8 +515,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
             req.httpBody = bodyStr.data(using: .utf8)
 
             URLSession.shared.dataTask(with: req) { [weak self] data, _, _ in
-                guard let self = self,
-                      let data = data,
+                guard let data = data,
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let resp = json["response"] as? [String: Any],
                       let streamUrl = resp["streamUrl"] as? String,
@@ -527,17 +526,19 @@ class CameraMatrixWebRTCViewController: UIViewController {
                     .replacingOccurrences(of: ":2053/", with: ":2096/")
                     .replacingOccurrences(of: "/index.m3u8", with: "/whep")
 
-                // Aggiorna pendingCloseJs con la pulizia di questa cam
-                if !seriale.isEmpty && !sessionCamId.isEmpty {
-                    let extra = "fetch('/dashboard/controlroomremovecam/\(seriale)/\(sessionCamId)',{method:'POST',credentials:'same-origin'});"
-                    if var js = ExoPlayerPlugin.pendingCloseJs {
-                        js = js.replacingOccurrences(of: "})();", with: extra + "})();")
-                        ExoPlayerPlugin.pendingCloseJs = js
-                    }
-                }
-
+                // Tutto sul main thread: aggiornamento pendingCloseJs + array + avvio stream
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self else { return }
+
+                    // Aggiorna pendingCloseJs con la pulizia di questa cam (main thread)
+                    if !seriale.isEmpty && !sessionCamId.isEmpty {
+                        let extra = "fetch('/dashboard/controlroomremovecam/\(seriale)/\(sessionCamId)',{method:'POST',credentials:'same-origin'});"
+                        if var js = ExoPlayerPlugin.pendingCloseJs {
+                            js = js.replacingOccurrences(of: "})();", with: extra + "})();")
+                            ExoPlayerPlugin.pendingCloseJs = js
+                        }
+                    }
+
                     let idx = self.streamUrls.count
                     self.streamUrls.append(whepUrl)
                     self.streamNames.append(name)
@@ -563,6 +564,9 @@ class CameraMatrixWebRTCViewController: UIViewController {
                     self.buildGridSync()
                     self.streamsButton.setTitle(self.streamsBtnLabel(), for: .normal)
                     self.streamsButton.sizeToFit()
+                    // NON appendere a allCameraNames: la cam è già presente nell'elenco globale
+                    // passato da JS (allCameras). Il mapping in StreamsMenuViewController la
+                    // troverà come "attiva" perché streamNames ora la contiene.
                 }
             }.resume()
         }
@@ -841,7 +845,7 @@ extension StreamsMenuViewController: UITableViewDataSource, UITableViewDelegate 
             let info    = aIdx < activeInfo.count     ? activeInfo[aIdx] : ""
             cell.textLabel?.text        = name
             cell.textLabel?.textColor   = .white
-            cell.detailTextLabel?.text  = info
+            cell.detailTextLabel?.text  = info.hasPrefix("\n") ? String(info.dropFirst()) : info
             cell.detailTextLabel?.textColor = failed ? .systemRed : .lightGray
             cell.accessoryType          = enabled ? .checkmark : .none
             cell.tintColor              = .white
