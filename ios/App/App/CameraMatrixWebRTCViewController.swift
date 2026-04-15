@@ -478,12 +478,19 @@ class CameraMatrixWebRTCViewController: UIViewController {
         let camId           = info["camId"]           ?? ""
         let viewerClientId  = info["viewerClientId"]  ?? ""
         let streamSessionId = info["streamSessionId"] ?? ""
-        guard !seriale.isEmpty, !camId.isEmpty else { return }
+        glog("addNewStream: name=\(name) seriale=\(seriale) camId=\(camId)")
+        guard !seriale.isEmpty, !camId.isEmpty else {
+            glog("addNewStream: seriale/camId vuoti — uscita")
+            return
+        }
 
         guard let webView = ExoPlayerPlugin.sharedBridge?.webView,
               let webUrl  = webView.url,
               let scheme  = webUrl.scheme,
-              let host    = webUrl.host else { return }
+              let host    = webUrl.host else {
+            glog("addNewStream: bridge/webView/URL non disponibile")
+            return
+        }
 
         let baseUrl    = "\(scheme)://\(host)"
         let addCamPath = "\(baseUrl)/dashboard/controlroomaddcam/\(seriale)"
@@ -514,12 +521,19 @@ class CameraMatrixWebRTCViewController: UIViewController {
             if !cookieHeader.isEmpty { req.setValue(cookieHeader, forHTTPHeaderField: "Cookie") }
             req.httpBody = bodyStr.data(using: .utf8)
 
-            URLSession.shared.dataTask(with: req) { [weak self] data, _, _ in
+            glog("addNewStream: POST \(addCamPath)")
+            URLSession.shared.dataTask(with: req) { [weak self] data, response, error in
+                let http = (response as? HTTPURLResponse)?.statusCode ?? 0
+                glog("addNewStream: HTTP \(http) error=\(error?.localizedDescription ?? "nil")")
                 guard let data = data,
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let resp = json["response"] as? [String: Any],
                       let streamUrl = resp["streamUrl"] as? String,
-                      !streamUrl.isEmpty, streamUrl != "null" else { return }
+                      !streamUrl.isEmpty, streamUrl != "null" else {
+                    if let d = data { glog("addNewStream: risposta non valida: \(String(data: d, encoding: .utf8) ?? "?")") }
+                    return
+                }
+                glog("addNewStream: streamUrl=\(streamUrl)")
 
                 let sessionCamId = resp["streamSessionCamId"] as? String ?? ""
                 let whepUrl = streamUrl
@@ -623,7 +637,8 @@ class CameraMatrixWebRTCViewController: UIViewController {
     private func streamsBtnLabel() -> String {
         let active = (0..<enabled.count).filter { enabled[$0] && !failed[$0] }.count
         let failedCount = failed.filter { $0 }.count
-        var label = "≡  \(active)/\(streamUrls.count) flussi"
+        let total = allCameraNames.isEmpty ? streamUrls.count : allCameraNames.count
+        var label = "≡  \(active)/\(total) flussi"
         if failedCount > 0 { label += "  ⚠\(failedCount)" }
         return label
     }
@@ -867,10 +882,13 @@ extension StreamsMenuViewController: UITableViewDataSource, UITableViewDelegate 
         let i    = indexPath.row
         let aIdx = activeIndex[i]
         if aIdx >= 0 {
-            dismiss(animated: true) { [weak self] in self?.onToggle?(aIdx) }
+            // Cattura il callback direttamente (non self) per evitare che sia nil dopo il dismiss
+            let cb = onToggle
+            dismiss(animated: true) { cb?(aIdx) }
         } else if i < allCameraInfo.count {
             let info = allCameraInfo[i]
-            dismiss(animated: true) { [weak self] in self?.onAddCamera?(info) }
+            let cb   = onAddCamera
+            dismiss(animated: true) { cb?(info) }
         }
     }
 }
