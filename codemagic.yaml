@@ -76,3 +76,63 @@ workflows:
         auth: integration
         submit_to_testflight: true
         submit_to_app_store: false
+
+  ios-adhoc:
+    name: Guardroom24 iOS AdHoc
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+
+    integrations:
+      app_store_connect: Codemagic
+
+    environment:
+      ios_signing:
+        distribution_type: ad_hoc
+        bundle_identifier: it.guardroom24.app
+      vars:
+        XCODE_PROJECT: "ios/App/App.xcodeproj"
+        XCODE_SCHEME: "App"
+        BUNDLE_ID: "it.guardroom24.app"
+      node: latest
+
+    scripts:
+      - name: Install npm dependencies
+        script: npm install
+
+      - name: Capacitor sync
+        script: npx cap sync ios
+
+      - name: Add WebRTC to CapApp-SPM
+        script: |
+          python3 - << 'PYEOF'
+          path = 'ios/App/CapApp-SPM/Package.swift'
+          c = open(path).read()
+          if 'WebRTCFixed' not in c:
+              c = c.replace(
+                  '    dependencies: [',
+                  '    dependencies: [\n        .package(name: "WebRTC", path: "../WebRTCFixed"),',
+                  1
+              )
+              first = c.index('.product(name: "Capacitor"')
+              c = c[:first] + '.product(name: "WebRTC", package: "WebRTC"),\n                ' + c[first:]
+              open(path, 'w').write(c)
+              print('WebRTC (WebRTCFixed locale) aggiunto a Package.swift')
+          else:
+              print('WebRTC gia presente in Package.swift')
+          PYEOF
+          cat > ios/App/CapApp-SPM/Sources/CapApp-SPM/WebRTCExport.swift << 'SWIFTEOF'
+          @_exported import WebRTC
+          SWIFTEOF
+
+      - name: Set up code signing
+        script: xcode-project use-profiles
+
+      - name: Build iOS IPA
+        script: |
+          xcode-project build-ipa \
+            --project "$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME"
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log

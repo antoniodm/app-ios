@@ -53,6 +53,8 @@
 	<string>Necessario per la scansione del codice QR durante l'aggiunta di dispositivi Z-Wave Smart Start.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Necessario per lo streaming WebRTC delle telecamere di sorveglianza.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
