@@ -667,3 +667,99 @@ private class FrameSink: NSObject, RTCVideoRenderer {
         vc?.onFrame(idx: idx, width: Int(f.width), height: Int(f.height))
     }
 }
+
+// MARK: - Streams menu (all cameras)
+
+private final class StreamsMenuViewController: UIViewController {
+    var allCameraNames:      [String]   = []
+    var allCameraThumbnails: [UIImage?] = []
+    var activeNames:         [String]   = []
+    var activeEnabled:       [Bool]     = []
+    var activeFailed:        [Bool]     = []
+    var activeInfo:          [String]   = []
+    var onToggle: ((Int) -> Void)?
+
+    private var activeIndex: [Int] = []   // activeIndex[i] = index in activeNames for allCameraNames[i], or -1
+    private var tableView: UITableView!
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+
+        // Build mapping: allCameraNames[i] → index in activeNames
+        activeIndex = allCameraNames.map { name in
+            activeNames.firstIndex(of: name) ?? -1
+        }
+
+        tableView = UITableView(frame: .zero, style: .plain)
+        tableView.backgroundColor    = .black
+        tableView.separatorColor     = UIColor.gray.withAlphaComponent(0.3)
+        tableView.rowHeight          = 72
+        tableView.dataSource         = self
+        tableView.delegate           = self
+        tableView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(tableView)
+
+        NSLayoutConstraint.activate([
+            tableView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            tableView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+        ])
+    }
+}
+
+extension StreamsMenuViewController: UITableViewDataSource, UITableViewDelegate {
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        allCameraNames.count
+    }
+
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "smcam")
+            ?? UITableViewCell(style: .subtitle, reuseIdentifier: "smcam")
+
+        let i        = indexPath.row
+        let name     = allCameraNames[i]
+        let thumb    = i < allCameraThumbnails.count ? allCameraThumbnails[i] : nil
+        let aIdx     = activeIndex[i]
+        let isActive = aIdx >= 0
+
+        cell.imageView?.image       = thumb ?? UIImage(systemName: "video.slash")
+        cell.imageView?.tintColor   = .gray
+        cell.imageView?.contentMode = .scaleAspectFill
+        cell.imageView?.clipsToBounds = true
+        cell.backgroundColor        = .black
+        cell.selectionStyle         = isActive ? .default : .none
+
+        if isActive {
+            let enabled = aIdx < activeEnabled.count && activeEnabled[aIdx]
+            let failed  = aIdx < activeFailed.count  && activeFailed[aIdx]
+            let info    = aIdx < activeInfo.count     ? activeInfo[aIdx] : ""
+            cell.textLabel?.text        = name
+            cell.textLabel?.textColor   = .white
+            cell.detailTextLabel?.text  = info
+            cell.detailTextLabel?.textColor = failed ? .systemRed : .lightGray
+            cell.accessoryType          = enabled ? .checkmark : .none
+            cell.tintColor              = .white
+            cell.contentView.alpha      = 1.0
+        } else {
+            cell.textLabel?.text        = name
+            cell.textLabel?.textColor   = .gray
+            cell.detailTextLabel?.text  = "non aperta"
+            cell.detailTextLabel?.textColor = .darkGray
+            cell.accessoryType          = .none
+            cell.contentView.alpha      = 0.6
+        }
+
+        return cell
+    }
+
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        let aIdx = activeIndex[indexPath.row]
+        guard aIdx >= 0 else { return }
+        dismiss(animated: true) { [weak self] in
+            self?.onToggle?(aIdx)
+        }
+    }
+}
