@@ -57,13 +57,15 @@ public class ExoPlayerPlugin: CAPPlugin, CAPBridgedPlugin {
             return UIImage(data: data)
         }
         // Info completa per consentire di aggiungere cam dal menu in-matrix
+        // anyStr: gestisce sia String che NSNumber (camId può essere intero nel JSON)
+        func anyStr(_ v: Any?) -> String { (v as? String) ?? (v as? NSNumber).map { $0.stringValue } ?? "" }
         let allCamInfo: [[String: String]] = allCamerasList.map { cam in
             [
-                "name":            cam["name"]            as? String ?? "",
-                "seriale":         cam["seriale"]         as? String ?? "",
-                "camId":           cam["camId"]           as? String ?? "",
-                "viewerClientId":  cam["viewerClientId"]  as? String ?? "",
-                "streamSessionId": cam["streamSessionId"] as? String ?? "",
+                "name":            anyStr(cam["name"]),
+                "seriale":         anyStr(cam["seriale"]),
+                "camId":           anyStr(cam["camId"]),
+                "viewerClientId":  anyStr(cam["viewerClientId"]),
+                "streamSessionId": anyStr(cam["streamSessionId"]),
             ]
         }
 
