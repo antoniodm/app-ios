@@ -33,6 +33,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
 
     private var videoW: [Int] = []
     private var videoH: [Int] = []
+    private var videoCodec: [String] = []
     private var lastFrameTime: [TimeInterval] = []
 
     private static let factory: RTCPeerConnectionFactory = {
@@ -82,6 +83,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
         hlsFailCount  = Array(repeating: 0,     count: count)
         videoW        = Array(repeating: 0,     count: count)
         videoH        = Array(repeating: 0,     count: count)
+        videoCodec    = Array(repeating: "",    count: count)
         lastFrameTime = Array(repeating: 0,     count: count)
 
         setupScrollView()
@@ -263,6 +265,8 @@ class CameraMatrixWebRTCViewController: UIViewController {
             glog("Cam \(idx): WHEP HTTP \(statusCode)")
             pc.close(); return false
         }
+
+        if idx < videoCodec.count { videoCodec[idx] = Self.codecFromSdp(sdp) }
 
         let sem4 = DispatchSemaphore(value: 0)
         pc.setRemoteDescription(RTCSessionDescription(type: .answer, sdp: sdp)) { _ in sem4.signal() }
@@ -572,6 +576,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
                     self.hlsFailCount.append(0)
                     self.videoW.append(0)
                     self.videoH.append(0)
+                    self.videoCodec.append("")
                     self.lastFrameTime.append(0)
                     self.startWhep(url: whepUrl, idx: idx)
                     self.updateColsRows()
@@ -586,11 +591,27 @@ class CameraMatrixWebRTCViewController: UIViewController {
         }
     }
 
+    private static func codecFromSdp(_ sdp: String) -> String {
+        var inVideo = false
+        for line in sdp.components(separatedBy: .newlines) {
+            if line.hasPrefix("m=video") { inVideo = true; continue }
+            if line.hasPrefix("m=") && inVideo { break }
+            if inVideo, line.hasPrefix("a=rtpmap:"), let sp = line.firstIndex(of: " ") {
+                let rest = String(line[line.index(after: sp)...])
+                let name = rest.components(separatedBy: "/").first ?? rest
+                let up = name.uppercased()
+                if up != "RED" && up != "ULPFEC" && up != "RTX" { return up }
+            }
+        }
+        return ""
+    }
+
     private func streamInfo(_ i: Int) -> String {
         if failed[i] { return "\nfallita — tocca per riprovare" }
         guard enabled[i] else { return "" }
         let proto = isHlsFallback[i] ? "HLS" : "WebRTC"
-        if videoW[i] > 0 { return "\n\(videoW[i])×\(videoH[i])  \(proto)" }
+        let codec = i < videoCodec.count && !videoCodec[i].isEmpty ? "  \(videoCodec[i])" : ""
+        if videoW[i] > 0 { return "\n\(videoW[i])×\(videoH[i])  \(proto)\(codec)" }
         return "\n\(proto) (connessione...)"
     }
 
@@ -600,7 +621,7 @@ class CameraMatrixWebRTCViewController: UIViewController {
         failed[i] = false
         isHlsFallback[i] = false
         hlsFailCount[i] = 0
-        videoW[i] = 0; videoH[i] = 0; lastFrameTime[i] = 0
+        videoW[i] = 0; videoH[i] = 0; lastFrameTime[i] = 0; if i < videoCodec.count { videoCodec[i] = "" }
         startWhep(url: streamUrls[i], idx: i)
         updateColsRows()
         buildGrid()
