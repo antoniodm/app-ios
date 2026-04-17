@@ -444,10 +444,11 @@ class CameraMatrixWebRTCViewController: UIViewController {
         contentView.frame = CGRect(x: 0, y: 0, width: screenW, height: totalH)
         scrollView.contentSize = CGSize(width: screenW, height: totalH)
 
+        let topInset = view.safeAreaInsets.top + 8
         closeButton.sizeToFit()
-        closeButton.frame.origin = CGPoint(x: screenW - closeButton.frame.width - 16, y: 48)
+        closeButton.frame.origin = CGPoint(x: screenW - closeButton.frame.width - 16, y: topInset)
         streamsButton.sizeToFit()
-        streamsButton.frame.origin = CGPoint(x: 16, y: 48)
+        streamsButton.frame.origin = CGPoint(x: 16, y: topInset)
         view.bringSubviewToFront(closeButton)
         view.bringSubviewToFront(streamsButton)
     }
