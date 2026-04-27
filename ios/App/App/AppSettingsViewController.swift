@@ -27,9 +27,11 @@ class AppSettingsViewController: UITableViewController {
 
     private var tokenRegistered = false
     private let tokenDotLabel   = UILabel()
-    private var tokenObserver: NSObjectProtocol?
 
     private var previewPlayer: AVAudioPlayer?
+
+    // Cache cookie WKWebView, caricati in viewDidAppear (contesto sicuro)
+    private var cachedCookies: [HTTPCookie] = []
 
     init(bridge: CAPBridgeProtocol) {
         self.bridge = bridge
@@ -57,6 +59,22 @@ class AppSettingsViewController: UITableViewController {
 
         tokenDotLabel.font = .systemFont(ofSize: 18)
         applyDotColor()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // Carica cookie WKWebView e token APNs in contesto sicuro (VC già visibile,
+        // nessuna catena sincrona attiva) — così il tap handler non tocca mai WKWebView
+        loadCookiesAndToken()
+    }
+
+    private func loadCookiesAndToken() {
+        // 1. Cache cookies
+        bridge.webView?.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
+            self?.cachedCookies = cookies
+        }
+        // 2. Registra per APNs → AppDelegate salva il token in UserDefaults
+        UIApplication.shared.registerForRemoteNotifications()
     }
 
     @objc private func close() {
@@ -154,9 +172,6 @@ class AppSettingsViewController: UITableViewController {
             self?.previewPlayer = nil
         })
 
-        // Preview: suona al tap sull'azione (non standard UIKit ma facile via swizzling alternativo)
-        // Implementiamo con tap gesture sul tableView selection + override
-
         if let popover = alert.popoverPresentationController {
             popover.sourceView = tableView.cellForRow(at: IndexPath(row: 1, section: 1))
             popover.sourceRect = tableView.cellForRow(at: IndexPath(row: 1, section: 1))?.bounds ?? .zero
@@ -181,74 +196,55 @@ class AppSettingsViewController: UITableViewController {
     }
 
     private func updateTokenState(_ registered: Bool) {
-        let wasRegistered = tokenRegistered
         tokenRegistered = registered
         applyDotColor()
-
-        let removeIP = IndexPath(row: 3, section: 1)
-        if registered && !wasRegistered {
-            tableView.insertRows(at: [removeIP], with: .automatic)
-        } else if !registered && wasRegistered {
-            tableView.deleteRows(at: [removeIP], with: .automatic)
-        }
-        tableView.reloadRows(at: [IndexPath(row: 2, section: 1)], with: .none)
+        tableView.reloadSections(IndexSet(integer: 1), with: .none)
     }
 
     // MARK: - Token operations
 
     private func doRegisterToken() {
-        startTokenFlow(remove: false)
+        guard let token = UserDefaults.standard.string(forKey: "apns_device_token") else {
+            // Token non ancora cachato: ricarica e riprova
+            loadCookiesAndToken()
+            showAlert("Ripremi tra un secondo.")
+            return
+        }
+        sendToken(token, path: "/json_savefcmtoken") { [weak self] status in
+            self?.updateTokenState(status == 204)
+        }
     }
 
     private func doRemoveToken() {
-        startTokenFlow(remove: true)
-    }
-
-    private func startTokenFlow(remove: Bool) {
-        if let obs = tokenObserver { NotificationCenter.default.removeObserver(obs) }
-        tokenObserver = NotificationCenter.default.addObserver(
-            forName: .capacitorDidRegisterForRemoteNotifications,
-            object: nil, queue: nil
-        ) { [weak self] n in
-            guard let self else { return }
-            if let obs = self.tokenObserver { NotificationCenter.default.removeObserver(obs) }
-            self.tokenObserver = nil
-            guard let data = n.object as? Data else { return }
-            let token = data.map { String(format: "%02x", $0) }.joined()
-            UserDefaults.standard.set(token, forKey: "apns_device_token")
-            let path = remove ? "/json_removefcmtoken" : "/json_savefcmtoken"
-            // DispatchQueue.main.async rompe la catena sincrona ed evita il deadlock con getAllCookies
-            DispatchQueue.main.async {
-                self.sendToken(token, path: path) { status in
-                    self.updateTokenState(remove ? status != 204 : status == 204)
-                }
-            }
+        guard let token = UserDefaults.standard.string(forKey: "apns_device_token") else {
+            showAlert("Token non disponibile.")
+            return
         }
-        UIApplication.shared.registerForRemoteNotifications()
+        sendToken(token, path: "/json_removefcmtoken") { [weak self] status in
+            self?.updateTokenState(status != 204)
+        }
     }
 
+    // Nessuna operazione WKWebView qui: usa cachedCookies e URLSession puro
     private func sendToken(_ token: String, path: String, completion: @escaping (Int) -> Void) {
         guard let webView = bridge.webView,
               let currentURL = webView.url,
               let url = URL(string: path, relativeTo: currentURL) else { return }
-        webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-            let body = "v_token=\(token.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? token)"
-            request.httpBody = body.data(using: .utf8)
-            let headers = HTTPCookie.requestHeaderFields(with: cookies)
-            for (k, v) in headers { request.setValue(v, forHTTPHeaderField: k) }
-            URLSession.shared.dataTask(with: request) { data, _, _ in
-                var status = 500
-                if let data = data,
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let code = json["http_code"] {
-                    status = Int(String(describing: code)) ?? 500
-                }
-                DispatchQueue.main.async { completion(status) }
-            }.resume()
-        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.httpBody = "v_token=\(token.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? token)".data(using: .utf8)
+        let headers = HTTPCookie.requestHeaderFields(with: cachedCookies)
+        for (k, v) in headers { request.setValue(v, forHTTPHeaderField: k) }
+        URLSession.shared.dataTask(with: request) { data, _, _ in
+            var status = 500
+            if let data = data,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let code = json["http_code"] {
+                status = Int(String(describing: code)) ?? 500
+            }
+            DispatchQueue.main.async { completion(status) }
+        }.resume()
     }
 
     // MARK: - Azioni
