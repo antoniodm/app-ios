@@ -31,9 +31,9 @@ class AppSettingsViewController: UITableViewController {
 
     private var previewPlayer: AVAudioPlayer?
     private var debugLog: [String] = []
+    private let debugTextView = UITextView()
 
-    // Cache caricata in viewDidLoad (prima del modal, WKWebView attivo)
-    private var cachedCookies: [HTTPCookie] = []
+    // Solo URL base (proprietà semplice, nessuna IPC WKWebView)
     private var cachedServerURL: URL?
     private var cachedToken: String?
 
@@ -44,19 +44,40 @@ class AppSettingsViewController: UITableViewController {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    // MARK: - Log (sempre su main thread)
+
     private func dlog(_ msg: String) {
         let t = Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 10000)
         let line = String(format: "%.2f %@", t, msg)
         debugLog.append(line)
         os_log("GUARDROOM_SETTINGS %{public}@", type: .fault, line)
+        updateDebugHeader()
+    }
+
+    private func updateDebugHeader() {
+        // Chiamato sempre su main thread
+        let text = debugLog.joined(separator: "\n")
+        debugTextView.text = text
+        let bottom = debugTextView.contentSize.height - debugTextView.bounds.height
+        if bottom > 0 {
+            debugTextView.setContentOffset(CGPoint(x: 0, y: bottom), animated: false)
+        }
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        dlog("viewDidLoad — carico cache prima del modal")
         title = "Impostazioni App"
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             barButtonSystemItem: .close, target: self, action: #selector(close))
+
+        // Header con log debug — visibile subito senza nessun tap
+        debugTextView.isEditable = false
+        debugTextView.isScrollEnabled = true
+        debugTextView.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
+        debugTextView.textColor = .secondaryLabel
+        debugTextView.backgroundColor = .systemBackground
+        debugTextView.frame = CGRect(x: 0, y: 0, width: tableView.bounds.width, height: 180)
+        tableView.tableHeaderView = debugTextView
 
         let ud = UserDefaults.standard
         switchBio.isOn = ud.string(forKey: KEY_BIO_USER) != nil
@@ -72,14 +93,10 @@ class AppSettingsViewController: UITableViewController {
         tokenDotLabel.font = .systemFont(ofSize: 18)
         applyDotColor()
 
-        // ---- Carica tutto qui, PRIMA che il modal venga presentato ----
-        // WKWebView è in primo piano, nessun deadlock possibile
-
-        // 1. Token APNs da UserDefaults (salvato da AppDelegate.applicationDidBecomeActive)
+        // ZERO chiamate WKWebView: solo UserDefaults e proprietà .url (lettura semplice, nessuna IPC)
         cachedToken = ud.string(forKey: "apns_device_token")
-        dlog("viewDidLoad — cachedToken=\(cachedToken?.prefix(8).description ?? "NIL")")
+        dlog("viewDidLoad — token=\(cachedToken?.prefix(8).description ?? "NIL")")
 
-        // 2. URL base del server dalla WebView
         if let webView = bridge.webView, let url = webView.url {
             cachedServerURL = url
             dlog("viewDidLoad — serverURL=\(url.absoluteString)")
@@ -87,11 +104,10 @@ class AppSettingsViewController: UITableViewController {
             dlog("viewDidLoad — webView.url nil")
         }
 
-        // 3. Cookie di sessione dalla WebView (getAllCookies è sicuro qui)
-        bridge.webView?.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
-            self?.cachedCookies = cookies
-            self?.dlog("viewDidLoad — cookie caricati: \(cookies.count) (\(cookies.map(\.name).joined(separator: ",")))")
-        }
+        // Cookie: AppDelegate.applicationDidBecomeActive li ha già sincronizzati
+        // in HTTPCookieStorage.shared tramite CookieSyncer — URLSession li usa automaticamente
+        let cookieCount = HTTPCookieStorage.shared.cookies?.count ?? 0
+        dlog("viewDidLoad — cookie in HTTPCookieStorage: \(cookieCount)")
     }
 
     @objc private func close() {
@@ -148,7 +164,7 @@ class AppSettingsViewController: UITableViewController {
             default: break
             }
         } else {
-            cell.textLabel?.text = "Mostra log debug"
+            cell.textLabel?.text = "Copia log negli appunti"
             cell.textLabel?.textColor = .systemOrange
             cell.selectionStyle = .default
         }
@@ -166,23 +182,16 @@ class AppSettingsViewController: UITableViewController {
         } else if indexPath.section == 1 && indexPath.row == 3 {
             doRemoveToken()
         } else if indexPath.section == 2 {
-            showDebugLog()
+            copyLog()
         }
     }
 
     // MARK: - Debug
 
-    private func showDebugLog() {
+    private func copyLog() {
         let text = debugLog.isEmpty ? "(nessun log)" : debugLog.joined(separator: "\n")
-        let alert = UIAlertController(title: "Debug Log", message: text, preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "Copia", style: .default) { _ in
-            UIPasteboard.general.string = text
-        })
-        alert.addAction(UIAlertAction(title: "Cancella", style: .destructive) { [weak self] _ in
-            self?.debugLog.removeAll()
-        })
-        alert.addAction(UIAlertAction(title: "OK", style: .cancel))
-        present(alert, animated: true)
+        UIPasteboard.general.string = text
+        showAlert("Log copiato negli appunti (\(debugLog.count) righe)")
     }
 
     // MARK: - Suono allarme
@@ -243,9 +252,9 @@ class AppSettingsViewController: UITableViewController {
     // MARK: - Token operations
 
     private func doRegisterToken() {
-        dlog("doRegisterToken — token=\(cachedToken?.prefix(8).description ?? "NIL") cookies=\(cachedCookies.count) url=\(cachedServerURL?.host ?? "NIL")")
+        dlog("doRegisterToken — token=\(cachedToken?.prefix(8).description ?? "NIL") url=\(cachedServerURL?.host ?? "NIL")")
         guard let token = cachedToken else {
-            showAlert("Token APNs non disponibile. Apri il log debug per dettagli.")
+            showAlert("Token APNs non disponibile.")
             return
         }
         sendToken(token, path: "/json_savefcmtoken") { [weak self] status in
@@ -264,36 +273,38 @@ class AppSettingsViewController: UITableViewController {
         }
     }
 
-    // Usa solo dati cachati in viewDidLoad — ZERO operazioni WKWebView nel tap handler
+    // ZERO chiamate WKWebView — URLSession.shared usa automaticamente HTTPCookieStorage.shared
+    // (sincronizzato da AppDelegate.applicationDidBecomeActive tramite CookieSyncer)
     private func sendToken(_ token: String, path: String, completion: @escaping (Int) -> Void) {
         dlog("sendToken path=\(path)")
         guard let baseURL = cachedServerURL,
               let url = URL(string: path, relativeTo: baseURL) else {
-            dlog("sendToken — URL non costruibile")
+            dlog("sendToken — URL non costruibile (serverURL=\(cachedServerURL?.absoluteString ?? "nil"))")
+            showAlert("URL server non disponibile.")
             return
         }
-        dlog("sendToken — url=\(url.absoluteString) cookies=\(cachedCookies.count)")
+        let cookieCount = HTTPCookieStorage.shared.cookies?.count ?? 0
+        dlog("sendToken — url=\(url.absoluteString) cookie in storage: \(cookieCount)")
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = "v_token=\(token.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? token)".data(using: .utf8)
-        let headers = HTTPCookie.requestHeaderFields(with: cachedCookies)
-        for (k, v) in headers { request.setValue(v, forHTTPHeaderField: k) }
 
-        dlog("sendToken — avvio URLSession")
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             let httpStatus = (response as? HTTPURLResponse)?.statusCode ?? -1
             let body = data.flatMap { String(data: $0.prefix(300), encoding: .utf8) } ?? "nil"
-            self?.dlog("sendToken — httpStatus=\(httpStatus) error=\(error?.localizedDescription ?? "none") body=\(body)")
             var status = 500
             if let data = data,
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let code = json["http_code"] {
                 status = Int(String(describing: code)) ?? 500
             }
-            self?.dlog("sendToken — http_code=\(status)")
-            DispatchQueue.main.async { completion(status) }
+            DispatchQueue.main.async {
+                self?.dlog("sendToken — httpStatus=\(httpStatus) error=\(error?.localizedDescription ?? "none") body=\(body)")
+                self?.dlog("sendToken — http_code=\(status)")
+                completion(status)
+            }
         }.resume()
         dlog("sendToken — dataTask avviato")
     }

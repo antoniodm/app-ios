@@ -2,12 +2,27 @@ import UIKit
 import Capacitor
 import UserNotifications
 import AVFoundation
+import WebKit
+
+// Sincronizza i cookie WKWebView → HTTPCookieStorage.shared
+// In questo modo URLSession.shared li usa automaticamente senza toccare WKWebView dal modal
+private class CookieSyncer: NSObject, WKHTTPCookieStoreObserver {
+    func cookiesDidChange(in cookieStore: WKHTTPCookieStore) {
+        cookieStore.getAllCookies { cookies in
+            for cookie in cookies {
+                HTTPCookieStorage.shared.setCookie(cookie)
+            }
+        }
+    }
+}
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
     private var alarmPlayer: AVAudioPlayer?
+    private let cookieSyncer = CookieSyncer()
+    private var cookieSyncerAdded = false
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         UNUserNotificationCenter.current().delegate = self
@@ -19,11 +34,22 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     func applicationWillEnterForeground(_ application: UIApplication) {}
 
     func applicationDidBecomeActive(_ application: UIApplication) {
-        // Ferma il suono di allarme quando l'utente apre/usa l'app (come onActivityResumed su Android)
+        // Ferma il suono di allarme quando l'utente apre/usa l'app
         alarmPlayer?.stop()
         alarmPlayer = nil
-        // Aggiorna il token APNs in cache (AppDelegate lo salva in UserDefaults)
+        // Aggiorna il token APNs in cache
         UIApplication.shared.registerForRemoteNotifications()
+        // Sincronizza cookie WKWebView → HTTPCookieStorage.shared (contesto sicuro, nessun modal)
+        let store = WKWebsiteDataStore.default().httpCookieStore
+        if !cookieSyncerAdded {
+            store.add(cookieSyncer)
+            cookieSyncerAdded = true
+        }
+        store.getAllCookies { cookies in
+            for cookie in cookies {
+                HTTPCookieStorage.shared.setCookie(cookie)
+            }
+        }
     }
 
     func applicationWillTerminate(_ application: UIApplication) {}
@@ -60,9 +86,9 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
            let url = Bundle.main.url(forResource: soundName, withExtension: "wav") {
             alarmPlayer?.stop()
             alarmPlayer = try? AVAudioPlayer(contentsOf: url)
-            alarmPlayer?.numberOfLoops = -1  // loop finché l'utente non interagisce
+            alarmPlayer?.numberOfLoops = -1
             alarmPlayer?.play()
-            completionHandler([.banner, .badge])  // no .sound — suoniamo noi
+            completionHandler([.banner, .badge])
         } else {
             completionHandler([.banner, .sound, .badge])
         }
