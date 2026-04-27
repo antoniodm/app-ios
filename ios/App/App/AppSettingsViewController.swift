@@ -277,7 +277,13 @@ class AppSettingsViewController: UITableViewController {
     }
 
     @objc private func notifToggled(_ sw: UISwitch) {
-        if let url = URL(string: UIApplication.openNotificationSettingsURLString) {
+        let urlString: String
+        if #available(iOS 16.0, *) {
+            urlString = UIApplication.openNotificationSettingsURLString
+        } else {
+            urlString = UIApplication.openSettingsURLString
+        }
+        if let url = URL(string: urlString) {
             UIApplication.shared.open(url)
         }
         UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
