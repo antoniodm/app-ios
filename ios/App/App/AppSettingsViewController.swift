@@ -69,14 +69,6 @@ class AppSettingsViewController: UITableViewController {
         applyDotColor()
     }
 
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        dlog("viewDidAppear — chiamo registerForRemoteNotifications")
-        // Solo APNs registration — NESSUNA chiamata WKWebView
-        UIApplication.shared.registerForRemoteNotifications()
-        dlog("viewDidAppear — registerForRemoteNotifications tornato")
-    }
-
     @objc private func close() {
         previewPlayer?.stop()
         previewPlayer = nil

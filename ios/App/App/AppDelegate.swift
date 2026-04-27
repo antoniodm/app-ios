@@ -22,6 +22,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Ferma il suono di allarme quando l'utente apre/usa l'app (come onActivityResumed su Android)
         alarmPlayer?.stop()
         alarmPlayer = nil
+        // Aggiorna il token APNs in cache (AppDelegate lo salva in UserDefaults)
+        UIApplication.shared.registerForRemoteNotifications()
     }
 
     func applicationWillTerminate(_ application: UIApplication) {}
