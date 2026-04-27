@@ -30,8 +30,12 @@ class AppSettingsViewController: UITableViewController {
     private let tokenDotLabel   = UILabel()
 
     private var previewPlayer: AVAudioPlayer?
-
     private var debugLog: [String] = []
+
+    // Cache caricata in viewDidLoad (prima del modal, WKWebView attivo)
+    private var cachedCookies: [HTTPCookie] = []
+    private var cachedServerURL: URL?
+    private var cachedToken: String?
 
     init(bridge: CAPBridgeProtocol) {
         self.bridge = bridge
@@ -49,7 +53,7 @@ class AppSettingsViewController: UITableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        dlog("viewDidLoad")
+        dlog("viewDidLoad — carico cache prima del modal")
         title = "Impostazioni App"
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             barButtonSystemItem: .close, target: self, action: #selector(close))
@@ -67,6 +71,27 @@ class AppSettingsViewController: UITableViewController {
 
         tokenDotLabel.font = .systemFont(ofSize: 18)
         applyDotColor()
+
+        // ---- Carica tutto qui, PRIMA che il modal venga presentato ----
+        // WKWebView è in primo piano, nessun deadlock possibile
+
+        // 1. Token APNs da UserDefaults (salvato da AppDelegate.applicationDidBecomeActive)
+        cachedToken = ud.string(forKey: "apns_device_token")
+        dlog("viewDidLoad — cachedToken=\(cachedToken?.prefix(8).description ?? "NIL")")
+
+        // 2. URL base del server dalla WebView
+        if let webView = bridge.webView, let url = webView.url {
+            cachedServerURL = url
+            dlog("viewDidLoad — serverURL=\(url.absoluteString)")
+        } else {
+            dlog("viewDidLoad — webView.url nil")
+        }
+
+        // 3. Cookie di sessione dalla WebView (getAllCookies è sicuro qui)
+        bridge.webView?.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
+            self?.cachedCookies = cookies
+            self?.dlog("viewDidLoad — cookie caricati: \(cookies.count) (\(cookies.map(\.name).joined(separator: ",")))")
+        }
     }
 
     @objc private func close() {
@@ -86,7 +111,7 @@ class AppSettingsViewController: UITableViewController {
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         if section == 0 { return bioRows.count }
         if section == 1 { return tokenRegistered ? 4 : 3 }
-        return 1 // debug
+        return 1
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -170,7 +195,6 @@ class AppSettingsViewController: UITableViewController {
     private func showSoundPicker() {
         let current = UserDefaults(suiteName: APP_GROUP_ID)?.string(forKey: SOUND_KEY) ?? "firealarm"
         let alert = UIAlertController(title: "Suono allarme", message: nil, preferredStyle: .actionSheet)
-
         for (i, label) in SOUND_LABELS.enumerated() {
             let key = SOUND_KEYS[i]
             let isSelected = key == current
@@ -186,7 +210,6 @@ class AppSettingsViewController: UITableViewController {
             self?.previewPlayer?.stop()
             self?.previewPlayer = nil
         })
-
         if let popover = alert.popoverPresentationController {
             popover.sourceView = tableView.cellForRow(at: IndexPath(row: 1, section: 1))
             popover.sourceRect = tableView.cellForRow(at: IndexPath(row: 1, section: 1))?.bounds ?? .zero
@@ -220,13 +243,9 @@ class AppSettingsViewController: UITableViewController {
     // MARK: - Token operations
 
     private func doRegisterToken() {
-        let cachedToken = UserDefaults.standard.string(forKey: "apns_device_token")
-        dlog("doRegisterToken — token=\(cachedToken?.prefix(8) ?? "NIL")")
+        dlog("doRegisterToken — token=\(cachedToken?.prefix(8).description ?? "NIL") cookies=\(cachedCookies.count) url=\(cachedServerURL?.host ?? "NIL")")
         guard let token = cachedToken else {
-            dlog("doRegisterToken — token nil, chiamo registerForRemoteNotifications")
-            UIApplication.shared.registerForRemoteNotifications()
-            dlog("doRegisterToken — registerForRemoteNotifications tornato, token=\(UserDefaults.standard.string(forKey: "apns_device_token")?.prefix(8) ?? "ancora NIL")")
-            showAlert("Token non ancora disponibile. Controlla log debug.")
+            showAlert("Token APNs non disponibile. Apri il log debug per dettagli.")
             return
         }
         sendToken(token, path: "/json_savefcmtoken") { [weak self] status in
@@ -235,10 +254,9 @@ class AppSettingsViewController: UITableViewController {
     }
 
     private func doRemoveToken() {
-        let cachedToken = UserDefaults.standard.string(forKey: "apns_device_token")
-        dlog("doRemoveToken — token=\(cachedToken?.prefix(8) ?? "NIL")")
+        dlog("doRemoveToken — token=\(cachedToken?.prefix(8).description ?? "NIL")")
         guard let token = cachedToken else {
-            showAlert("Token non disponibile.")
+            showAlert("Token APNs non disponibile.")
             return
         }
         sendToken(token, path: "/json_removefcmtoken") { [weak self] status in
@@ -246,44 +264,35 @@ class AppSettingsViewController: UITableViewController {
         }
     }
 
-    // Usa HTTPCookieStorage.shared (sincrono, zero WKWebView) + URLSession puro
+    // Usa solo dati cachati in viewDidLoad — ZERO operazioni WKWebView nel tap handler
     private func sendToken(_ token: String, path: String, completion: @escaping (Int) -> Void) {
-        dlog("sendToken path=\(path) token=\(token.prefix(8))")
-        guard let webView = bridge.webView,
-              let currentURL = webView.url else {
-            dlog("sendToken — webView o url nil, esco")
+        dlog("sendToken path=\(path)")
+        guard let baseURL = cachedServerURL,
+              let url = URL(string: path, relativeTo: baseURL) else {
+            dlog("sendToken — URL non costruibile")
             return
         }
-        guard let url = URL(string: path, relativeTo: currentURL) else {
-            dlog("sendToken — URL non costruibile da \(path) + \(currentURL)")
-            return
-        }
-        dlog("sendToken — URL=\(url.absoluteString)")
+        dlog("sendToken — url=\(url.absoluteString) cookies=\(cachedCookies.count)")
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = "v_token=\(token.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? token)".data(using: .utf8)
-
-        // Cookie da HTTPCookieStorage.shared (sincrono, mai blocca)
-        let sharedCookies = HTTPCookieStorage.shared.cookies(for: url) ?? []
-        dlog("sendToken — cookie shared: \(sharedCookies.count) (nomi: \(sharedCookies.map(\.name).joined(separator: ",")))")
-        let headers = HTTPCookie.requestHeaderFields(with: sharedCookies)
+        let headers = HTTPCookie.requestHeaderFields(with: cachedCookies)
         for (k, v) in headers { request.setValue(v, forHTTPHeaderField: k) }
 
-        dlog("sendToken — avvio URLSession.dataTask")
+        dlog("sendToken — avvio URLSession")
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             let httpStatus = (response as? HTTPURLResponse)?.statusCode ?? -1
-            let bodySnippet = data.flatMap { String(data: $0.prefix(200), encoding: .utf8) } ?? "nil"
-            self?.dlog("sendToken — risposta httpStatus=\(httpStatus) error=\(error?.localizedDescription ?? "none") body=\(bodySnippet)")
-
+            let body = data.flatMap { String(data: $0.prefix(300), encoding: .utf8) } ?? "nil"
+            self?.dlog("sendToken — httpStatus=\(httpStatus) error=\(error?.localizedDescription ?? "none") body=\(body)")
             var status = 500
             if let data = data,
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let code = json["http_code"] {
                 status = Int(String(describing: code)) ?? 500
             }
-            self?.dlog("sendToken — http_code parsed=\(status)")
+            self?.dlog("sendToken — http_code=\(status)")
             DispatchQueue.main.async { completion(status) }
         }.resume()
         dlog("sendToken — dataTask avviato")
