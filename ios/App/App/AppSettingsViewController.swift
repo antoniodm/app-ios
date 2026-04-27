@@ -195,59 +195,49 @@ class AppSettingsViewController: UITableViewController {
 
     // MARK: - Token operations
 
-    private func doRegisterToken() {
-        guard let webView = bridge.webView else { return }
-        webView.callAsyncJavaScript("""
-            var PN = window.Capacitor && window.Capacitor.Plugins.PushNotifications;
-            if (!PN) throw new Error("PushNotifications non disponibile");
-            await PN.removeAllListeners();
-            var data = await new Promise(function(resolve, reject) {
-                PN.addListener('registration', function(d) { resolve(d); });
-                PN.addListener('registrationError', function(e) { reject(new Error(e.error || 'error')); });
-                PN.register();
-            });
-            var res = await fetch('/json_savefcmtoken', {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: 'v_token=' + encodeURIComponent(data.value)
-            });
-            var json = await res.json();
-            return parseInt(json.http_code);
-        """, arguments: [:], in: nil, in: .page) { [weak self] result in
-            DispatchQueue.main.async {
-                if case .success(let val) = result, let status = val as? Int {
-                    self?.updateTokenState(status == 204)
-                }
+    private func observeToken(remove: Bool) {
+        NotificationCenter.default.removeObserver(self, name: .apnsTokenReceived, object: nil)
+        NotificationCenter.default.addObserver(forName: .apnsTokenReceived, object: nil, queue: .main) { [weak self] n in
+            NotificationCenter.default.removeObserver(self as Any, name: .apnsTokenReceived, object: nil)
+            guard let token = n.userInfo?["token"] as? String else { return }
+            let path = remove ? "/json_removefcmtoken" : "/json_savefcmtoken"
+            self?.sendToken(token, path: path) { status in
+                self?.updateTokenState(remove ? status != 204 : status == 204)
             }
         }
     }
 
+    private func doRegisterToken() {
+        observeToken(remove: false)
+        UIApplication.shared.registerForRemoteNotifications()
+    }
+
     private func doRemoveToken() {
-        guard let webView = bridge.webView else { return }
-        webView.callAsyncJavaScript("""
-            var PN = window.Capacitor && window.Capacitor.Plugins.PushNotifications;
-            if (!PN) throw new Error("PushNotifications non disponibile");
-            await PN.removeAllListeners();
-            var data = await new Promise(function(resolve, reject) {
-                PN.addListener('registration', function(d) { resolve(d); });
-                PN.addListener('registrationError', function(e) { reject(new Error(e.error || 'error')); });
-                PN.register();
-            });
-            var res = await fetch('/json_removefcmtoken', {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: 'v_token=' + encodeURIComponent(data.value)
-            });
-            var json = await res.json();
-            return parseInt(json.http_code);
-        """, arguments: [:], in: nil, in: .page) { [weak self] result in
-            DispatchQueue.main.async {
-                if case .success(let val) = result, let status = val as? Int {
-                    self?.updateTokenState(status != 204)
+        observeToken(remove: true)
+        UIApplication.shared.registerForRemoteNotifications()
+    }
+
+    private func sendToken(_ token: String, path: String, completion: @escaping (Int) -> Void) {
+        guard let webView = bridge.webView,
+              let currentURL = webView.url,
+              let url = URL(string: path, relativeTo: currentURL) else { return }
+        webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { cookies in
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            let body = "v_token=\(token.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? token)"
+            request.httpBody = body.data(using: .utf8)
+            let headers = HTTPCookie.requestHeaderFields(with: cookies)
+            for (k, v) in headers { request.setValue(v, forHTTPHeaderField: k) }
+            URLSession.shared.dataTask(with: request) { data, _, _ in
+                var status = 500
+                if let data = data,
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let code = json["http_code"] {
+                    status = Int(String(describing: code)) ?? 500
                 }
-            }
+                DispatchQueue.main.async { completion(status) }
+            }.resume()
         }
     }
 
