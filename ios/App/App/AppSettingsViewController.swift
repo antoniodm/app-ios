@@ -27,6 +27,7 @@ class AppSettingsViewController: UITableViewController {
 
     private var tokenRegistered = false
     private let tokenDotLabel   = UILabel()
+    private var tokenObserver: NSObjectProtocol?
 
     private var previewPlayer: AVAudioPlayer?
 
@@ -196,23 +197,34 @@ class AppSettingsViewController: UITableViewController {
     // MARK: - Token operations
 
     private func doRegisterToken() {
-        guard let token = UserDefaults.standard.string(forKey: "apns_device_token") else {
-            showAlert("Token non disponibile. Apri la home dell'app mentre sei connesso per generarlo.")
-            return
-        }
-        sendToken(token, path: "/json_savefcmtoken") { [weak self] status in
-            self?.updateTokenState(status == 204)
-        }
+        startTokenFlow(remove: false)
     }
 
     private func doRemoveToken() {
-        guard let token = UserDefaults.standard.string(forKey: "apns_device_token") else {
-            showAlert("Token non disponibile.")
-            return
+        startTokenFlow(remove: true)
+    }
+
+    private func startTokenFlow(remove: Bool) {
+        if let obs = tokenObserver { NotificationCenter.default.removeObserver(obs) }
+        tokenObserver = NotificationCenter.default.addObserver(
+            forName: .capacitorDidRegisterForRemoteNotifications,
+            object: nil, queue: nil
+        ) { [weak self] n in
+            guard let self else { return }
+            if let obs = self.tokenObserver { NotificationCenter.default.removeObserver(obs) }
+            self.tokenObserver = nil
+            guard let data = n.object as? Data else { return }
+            let token = data.map { String(format: "%02x", $0) }.joined()
+            UserDefaults.standard.set(token, forKey: "apns_device_token")
+            let path = remove ? "/json_removefcmtoken" : "/json_savefcmtoken"
+            // DispatchQueue.main.async rompe la catena sincrona ed evita il deadlock con getAllCookies
+            DispatchQueue.main.async {
+                self.sendToken(token, path: path) { status in
+                    self.updateTokenState(remove ? status != 204 : status == 204)
+                }
+            }
         }
-        sendToken(token, path: "/json_removefcmtoken") { [weak self] status in
-            self?.updateTokenState(status != 204)
-        }
+        UIApplication.shared.registerForRemoteNotifications()
     }
 
     private func sendToken(_ token: String, path: String, completion: @escaping (Int) -> Void) {
