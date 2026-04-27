@@ -2,6 +2,7 @@ import UIKit
 import UserNotifications
 import Capacitor
 import AVFoundation
+import os.log
 
 private let KEY_BIO_USER  = "CapacitorStorage.bio_username"
 private let KEY_BIO_PASS  = "CapacitorStorage.bio_password"
@@ -19,7 +20,7 @@ class AppSettingsViewController: UITableViewController {
 
     private let bridge: CAPBridgeProtocol
 
-    private let sections = ["ACCESSO BIOMETRICO", "NOTIFICHE"]
+    private let sections = ["ACCESSO BIOMETRICO", "NOTIFICHE", "DEBUG"]
     private let bioRows  = ["Impronta / Face ID", "Gestisci impronte del telefono →"]
 
     private var switchBio   = UISwitch()
@@ -30,8 +31,7 @@ class AppSettingsViewController: UITableViewController {
 
     private var previewPlayer: AVAudioPlayer?
 
-    // Cache cookie WKWebView, caricati in viewDidAppear (contesto sicuro)
-    private var cachedCookies: [HTTPCookie] = []
+    private var debugLog: [String] = []
 
     init(bridge: CAPBridgeProtocol) {
         self.bridge = bridge
@@ -40,8 +40,16 @@ class AppSettingsViewController: UITableViewController {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    private func dlog(_ msg: String) {
+        let t = Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 10000)
+        let line = String(format: "%.2f %@", t, msg)
+        debugLog.append(line)
+        os_log("GUARDROOM_SETTINGS %{public}@", type: .fault, line)
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
+        dlog("viewDidLoad")
         title = "Impostazioni App"
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             barButtonSystemItem: .close, target: self, action: #selector(close))
@@ -63,18 +71,10 @@ class AppSettingsViewController: UITableViewController {
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        // Carica cookie WKWebView e token APNs in contesto sicuro (VC già visibile,
-        // nessuna catena sincrona attiva) — così il tap handler non tocca mai WKWebView
-        loadCookiesAndToken()
-    }
-
-    private func loadCookiesAndToken() {
-        // 1. Cache cookies
-        bridge.webView?.configuration.websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
-            self?.cachedCookies = cookies
-        }
-        // 2. Registra per APNs → AppDelegate salva il token in UserDefaults
+        dlog("viewDidAppear — chiamo registerForRemoteNotifications")
+        // Solo APNs registration — NESSUNA chiamata WKWebView
         UIApplication.shared.registerForRemoteNotifications()
+        dlog("viewDidAppear — registerForRemoteNotifications tornato")
     }
 
     @objc private func close() {
@@ -92,7 +92,9 @@ class AppSettingsViewController: UITableViewController {
     }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        section == 0 ? bioRows.count : (tokenRegistered ? 4 : 3)
+        if section == 0 { return bioRows.count }
+        if section == 1 { return tokenRegistered ? 4 : 3 }
+        return 1 // debug
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -107,7 +109,7 @@ class AppSettingsViewController: UITableViewController {
                 cell.textLabel?.textColor = .systemBlue
                 cell.selectionStyle = .default
             }
-        } else {
+        } else if indexPath.section == 1 {
             switch indexPath.row {
             case 0:
                 cell.textLabel?.text = "Notifiche abilitate"
@@ -128,6 +130,10 @@ class AppSettingsViewController: UITableViewController {
                 cell.selectionStyle = .default
             default: break
             }
+        } else {
+            cell.textLabel?.text = "Mostra log debug"
+            cell.textLabel?.textColor = .systemOrange
+            cell.selectionStyle = .default
         }
         return cell
     }
@@ -142,7 +148,24 @@ class AppSettingsViewController: UITableViewController {
             doRegisterToken()
         } else if indexPath.section == 1 && indexPath.row == 3 {
             doRemoveToken()
+        } else if indexPath.section == 2 {
+            showDebugLog()
         }
+    }
+
+    // MARK: - Debug
+
+    private func showDebugLog() {
+        let text = debugLog.isEmpty ? "(nessun log)" : debugLog.joined(separator: "\n")
+        let alert = UIAlertController(title: "Debug Log", message: text, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Copia", style: .default) { _ in
+            UIPasteboard.general.string = text
+        })
+        alert.addAction(UIAlertAction(title: "Cancella", style: .destructive) { [weak self] _ in
+            self?.debugLog.removeAll()
+        })
+        alert.addAction(UIAlertAction(title: "OK", style: .cancel))
+        present(alert, animated: true)
     }
 
     // MARK: - Suono allarme
@@ -196,6 +219,7 @@ class AppSettingsViewController: UITableViewController {
     }
 
     private func updateTokenState(_ registered: Bool) {
+        dlog("updateTokenState registered=\(registered)")
         tokenRegistered = registered
         applyDotColor()
         tableView.reloadSections(IndexSet(integer: 1), with: .none)
@@ -204,10 +228,13 @@ class AppSettingsViewController: UITableViewController {
     // MARK: - Token operations
 
     private func doRegisterToken() {
-        guard let token = UserDefaults.standard.string(forKey: "apns_device_token") else {
-            // Token non ancora cachato: ricarica e riprova
-            loadCookiesAndToken()
-            showAlert("Ripremi tra un secondo.")
+        let cachedToken = UserDefaults.standard.string(forKey: "apns_device_token")
+        dlog("doRegisterToken — token=\(cachedToken?.prefix(8) ?? "NIL")")
+        guard let token = cachedToken else {
+            dlog("doRegisterToken — token nil, chiamo registerForRemoteNotifications")
+            UIApplication.shared.registerForRemoteNotifications()
+            dlog("doRegisterToken — registerForRemoteNotifications tornato, token=\(UserDefaults.standard.string(forKey: "apns_device_token")?.prefix(8) ?? "ancora NIL")")
+            showAlert("Token non ancora disponibile. Controlla log debug.")
             return
         }
         sendToken(token, path: "/json_savefcmtoken") { [weak self] status in
@@ -216,7 +243,9 @@ class AppSettingsViewController: UITableViewController {
     }
 
     private func doRemoveToken() {
-        guard let token = UserDefaults.standard.string(forKey: "apns_device_token") else {
+        let cachedToken = UserDefaults.standard.string(forKey: "apns_device_token")
+        dlog("doRemoveToken — token=\(cachedToken?.prefix(8) ?? "NIL")")
+        guard let token = cachedToken else {
             showAlert("Token non disponibile.")
             return
         }
@@ -225,26 +254,47 @@ class AppSettingsViewController: UITableViewController {
         }
     }
 
-    // Nessuna operazione WKWebView qui: usa cachedCookies e URLSession puro
+    // Usa HTTPCookieStorage.shared (sincrono, zero WKWebView) + URLSession puro
     private func sendToken(_ token: String, path: String, completion: @escaping (Int) -> Void) {
+        dlog("sendToken path=\(path) token=\(token.prefix(8))")
         guard let webView = bridge.webView,
-              let currentURL = webView.url,
-              let url = URL(string: path, relativeTo: currentURL) else { return }
+              let currentURL = webView.url else {
+            dlog("sendToken — webView o url nil, esco")
+            return
+        }
+        guard let url = URL(string: path, relativeTo: currentURL) else {
+            dlog("sendToken — URL non costruibile da \(path) + \(currentURL)")
+            return
+        }
+        dlog("sendToken — URL=\(url.absoluteString)")
+
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = "v_token=\(token.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? token)".data(using: .utf8)
-        let headers = HTTPCookie.requestHeaderFields(with: cachedCookies)
+
+        // Cookie da HTTPCookieStorage.shared (sincrono, mai blocca)
+        let sharedCookies = HTTPCookieStorage.shared.cookies(for: url) ?? []
+        dlog("sendToken — cookie shared: \(sharedCookies.count) (nomi: \(sharedCookies.map(\.name).joined(separator: ",")))")
+        let headers = HTTPCookie.requestHeaderFields(with: sharedCookies)
         for (k, v) in headers { request.setValue(v, forHTTPHeaderField: k) }
-        URLSession.shared.dataTask(with: request) { data, _, _ in
+
+        dlog("sendToken — avvio URLSession.dataTask")
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            let httpStatus = (response as? HTTPURLResponse)?.statusCode ?? -1
+            let bodySnippet = data.flatMap { String(data: $0.prefix(200), encoding: .utf8) } ?? "nil"
+            self?.dlog("sendToken — risposta httpStatus=\(httpStatus) error=\(error?.localizedDescription ?? "none") body=\(bodySnippet)")
+
             var status = 500
             if let data = data,
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let code = json["http_code"] {
                 status = Int(String(describing: code)) ?? 500
             }
+            self?.dlog("sendToken — http_code parsed=\(status)")
             DispatchQueue.main.async { completion(status) }
         }.resume()
+        dlog("sendToken — dataTask avviato")
     }
 
     // MARK: - Azioni
