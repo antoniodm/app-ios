@@ -59,7 +59,33 @@ workflows:
           xcodebuild -project ios/App/App.xcodeproj -scheme App -showBuildSettings 2>&1 | tail -30 || true
 
       - name: Set up code signing
-        script: xcode-project use-profiles
+        script: |
+          xcode-project use-profiles
+          python3 - << 'PYEOF'
+          import subprocess, glob, re, os
+          profile_dir = os.path.expanduser('~/Library/MobileDevice/Provisioning Profiles/')
+          ext_uuid = None
+          for p in glob.glob(profile_dir + '*.mobileprovision'):
+              out = subprocess.run(['security', 'cms', '-D', '-i', p],
+                                   capture_output=True, text=True).stdout
+              if 'it.guardroom24.app.AlarmNotificationExtension' in out:
+                  m = re.search(r'<key>UUID</key>\s*<string>(.*?)</string>', out)
+                  if m:
+                      ext_uuid = m.group(1)
+                      break
+          if not ext_uuid:
+              print('WARN: extension profile non trovato')
+          else:
+              pbxproj = 'ios/App/App.xcodeproj/project.pbxproj'
+              content = open(pbxproj).read()
+              content = re.sub(
+                  r'(PRODUCT_BUNDLE_IDENTIFIER = it\.guardroom24\.app\.AlarmNotificationExtension;)',
+                  f'\\1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = "{ext_uuid}";',
+                  content
+              )
+              open(pbxproj, 'w').write(content)
+              print(f'Extension profile {ext_uuid} impostato')
+          PYEOF
 
       - name: Build iOS IPA
         script: |
@@ -136,7 +162,33 @@ workflows:
           SWIFTEOF
 
       - name: Set up code signing
-        script: xcode-project use-profiles
+        script: |
+          xcode-project use-profiles
+          python3 - << 'PYEOF'
+          import subprocess, glob, re, os
+          profile_dir = os.path.expanduser('~/Library/MobileDevice/Provisioning Profiles/')
+          ext_uuid = None
+          for p in glob.glob(profile_dir + '*.mobileprovision'):
+              out = subprocess.run(['security', 'cms', '-D', '-i', p],
+                                   capture_output=True, text=True).stdout
+              if 'it.guardroom24.app.AlarmNotificationExtension' in out:
+                  m = re.search(r'<key>UUID</key>\s*<string>(.*?)</string>', out)
+                  if m:
+                      ext_uuid = m.group(1)
+                      break
+          if not ext_uuid:
+              print('WARN: extension profile non trovato')
+          else:
+              pbxproj = 'ios/App/App.xcodeproj/project.pbxproj'
+              content = open(pbxproj).read()
+              content = re.sub(
+                  r'(PRODUCT_BUNDLE_IDENTIFIER = it\.guardroom24\.app\.AlarmNotificationExtension;)',
+                  f'\\1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = "{ext_uuid}";',
+                  content
+              )
+              open(pbxproj, 'w').write(content)
+              print(f'Extension profile {ext_uuid} impostato')
+          PYEOF
 
       - name: Build iOS IPA
         script: |
@@ -207,7 +259,33 @@ workflows:
           SWIFTEOF
 
       - name: Set up code signing
-        script: xcode-project use-profiles
+        script: |
+          xcode-project use-profiles
+          python3 - << 'PYEOF'
+          import subprocess, glob, re, os
+          profile_dir = os.path.expanduser('~/Library/MobileDevice/Provisioning Profiles/')
+          ext_uuid = None
+          for p in glob.glob(profile_dir + '*.mobileprovision'):
+              out = subprocess.run(['security', 'cms', '-D', '-i', p],
+                                   capture_output=True, text=True).stdout
+              if 'it.guardroom24.app.AlarmNotificationExtension' in out:
+                  m = re.search(r'<key>UUID</key>\s*<string>(.*?)</string>', out)
+                  if m:
+                      ext_uuid = m.group(1)
+                      break
+          if not ext_uuid:
+              print('WARN: extension profile non trovato')
+          else:
+              pbxproj = 'ios/App/App.xcodeproj/project.pbxproj'
+              content = open(pbxproj).read()
+              content = re.sub(
+                  r'(PRODUCT_BUNDLE_IDENTIFIER = it\.guardroom24\.app\.AlarmNotificationExtension;)',
+                  f'\\1\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = "{ext_uuid}";',
+                  content
+              )
+              open(pbxproj, 'w').write(content)
+              print(f'Extension profile {ext_uuid} impostato')
+          PYEOF
 
       - name: Build iOS IPA
         script: |
