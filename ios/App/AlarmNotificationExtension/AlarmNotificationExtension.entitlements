@@ -6,7 +6,5 @@
 	<array>
 		<string>group.it.guardroom24.app</string>
 	</array>
-	<key>aps-environment</key>
-	<string>production</string>
 </dict>
 </plist>
