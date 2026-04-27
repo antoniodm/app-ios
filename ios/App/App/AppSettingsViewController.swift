@@ -273,25 +273,35 @@ class AppSettingsViewController: UITableViewController {
         }
     }
 
-    // ZERO chiamate WKWebView — URLSession.shared usa automaticamente HTTPCookieStorage.shared
-    // (sincronizzato da AppDelegate.applicationDidBecomeActive tramite CookieSyncer)
+    // ZERO chiamate WKWebView — session ephemeral con cookie disabilitati, cookie aggiunti manualmente
+    // URLSession.shared su iOS 17+ sincronizza cookie con WKWebView internamente → stesso deadlock
     private func sendToken(_ token: String, path: String, completion: @escaping (Int) -> Void) {
         dlog("sendToken path=\(path)")
         guard let baseURL = cachedServerURL,
-              let url = URL(string: path, relativeTo: baseURL) else {
+              let url = URL(string: path, relativeTo: baseURL)?.absoluteURL else {
             dlog("sendToken — URL non costruibile (serverURL=\(cachedServerURL?.absoluteString ?? "nil"))")
             showAlert("URL server non disponibile.")
             return
         }
-        let cookieCount = HTTPCookieStorage.shared.cookies?.count ?? 0
-        dlog("sendToken — url=\(url.absoluteString) cookie in storage: \(cookieCount)")
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = "v_token=\(token.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? token)".data(using: .utf8)
 
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+        // Cookie manuali da HTTPCookieStorage.shared (sincronizzato da AppDelegate tramite CookieSyncer)
+        let cookies = HTTPCookieStorage.shared.cookies(for: url) ?? []
+        dlog("sendToken — url=\(url.absoluteString) cookie: \(cookies.count) [\(cookies.map(\.name).joined(separator: ","))]")
+        let cookieHeaders = HTTPCookie.requestHeaderFields(with: cookies)
+        for (k, v) in cookieHeaders { request.setValue(v, forHTTPHeaderField: k) }
+
+        // Session ephemeral: ZERO gestione automatica cookie → nessuna IPC con WKWebView
+        let config = URLSessionConfiguration.ephemeral
+        config.httpCookieAcceptPolicy = .never
+        config.httpShouldSetCookies = false
+        let session = URLSession(configuration: config)
+
+        session.dataTask(with: request) { [weak self] data, response, error in
             let httpStatus = (response as? HTTPURLResponse)?.statusCode ?? -1
             let body = data.flatMap { String(data: $0.prefix(300), encoding: .utf8) } ?? "nil"
             var status = 500
@@ -306,7 +316,7 @@ class AppSettingsViewController: UITableViewController {
                 completion(status)
             }
         }.resume()
-        dlog("sendToken — dataTask avviato")
+        dlog("sendToken — request inviata")
     }
 
     // MARK: - Azioni
