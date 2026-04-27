@@ -3,6 +3,7 @@ import Capacitor
 class MainViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(ExoPlayerPlugin())
+        bridge?.registerPluginInstance(AppSettingsPlugin())
     }
 
     override func viewDidLayoutSubviews() {

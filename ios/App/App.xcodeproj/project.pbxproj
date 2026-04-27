@@ -15,12 +15,55 @@
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
-		A1B2C3D4E5F6A7B8C9D0E1F3 /* alarm.wav in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6A7B8C9D0E1F2 /* alarm.wav */; };
 		BB00000100020000ABCD0001 /* ExoPlayerPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000100010000ABCD0001 /* ExoPlayerPlugin.swift */; };
 		BB00000100040000ABCD0001 /* CameraMatrixViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000100030000ABCD0001 /* CameraMatrixViewController.swift */; };
 		BB00000100060000ABCD0001 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000100050000ABCD0001 /* MainViewController.swift */; };
 		BB00000100080000ABCD0001 /* CameraMatrixWebRTCViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00000100070000ABCD0001 /* CameraMatrixWebRTCViewController.swift */; };
+		AA0000000000000000000001 /* AppSettingsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000002 /* AppSettingsPlugin.swift */; };
+		AA0000000000000000000003 /* AppSettingsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000004 /* AppSettingsViewController.swift */; };
+		AA0000000000000000000005 /* firealarm.wav in Resources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000006 /* firealarm.wav */; };
+		AA0000000000000000000007 /* funnyalarm.wav in Resources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000008 /* funnyalarm.wav */; };
+		AA0000000000000000000009 /* horroralarm.wav in Resources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000000A /* horroralarm.wav */; };
+		AA000000000000000000000B /* meditationalarm.wav in Resources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000000C /* meditationalarm.wav */; };
+		AA000000000000000000000D /* policealarm.wav in Resources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000000E /* policealarm.wav */; };
+		AA000000000000000000000F /* softalarm.wav in Resources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000010 /* softalarm.wav */; };
+		AA0000000000000000000011 /* strongalarm.wav in Resources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000012 /* strongalarm.wav */; };
+		AA0000000000000000000013 /* sweetalarm.wav in Resources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000014 /* sweetalarm.wav */; };
+		EE0000000000000000000003 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE0000000000000000000002 /* NotificationService.swift */; };
+		EE0000000000000000000007 /* firealarm.wav in Resources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000006 /* firealarm.wav */; };
+		EE0000000000000000000008 /* funnyalarm.wav in Resources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000008 /* funnyalarm.wav */; };
+		EE0000000000000000000009 /* horroralarm.wav in Resources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000000A /* horroralarm.wav */; };
+		EE000000000000000000000A /* meditationalarm.wav in Resources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000000C /* meditationalarm.wav */; };
+		EE000000000000000000000B /* policealarm.wav in Resources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000000E /* policealarm.wav */; };
+		EE000000000000000000000C /* softalarm.wav in Resources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000010 /* softalarm.wav */; };
+		EE000000000000000000000D /* strongalarm.wav in Resources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000012 /* strongalarm.wav */; };
+		EE000000000000000000000E /* sweetalarm.wav in Resources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000014 /* sweetalarm.wav */; };
+		EE000000000000000000000F /* AlarmNotificationExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = EE0000000000000000000006 /* AlarmNotificationExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		EE0000000000000000000019 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = EE0000000000000000000010;
+			remoteInfo = AlarmNotificationExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		EE0000000000000000000017 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				EE000000000000000000000F /* AlarmNotificationExtension.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
@@ -33,11 +76,24 @@
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
-		A1B2C3D4E5F6A7B8C9D0E1F2 /* alarm.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = alarm.wav; sourceTree = "<group>"; };
 		BB00000100010000ABCD0001 /* ExoPlayerPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExoPlayerPlugin.swift; sourceTree = "<group>"; };
 		BB00000100030000ABCD0001 /* CameraMatrixViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraMatrixViewController.swift; sourceTree = "<group>"; };
 		BB00000100050000ABCD0001 /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
 		BB00000100070000ABCD0001 /* CameraMatrixWebRTCViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraMatrixWebRTCViewController.swift; sourceTree = "<group>"; };
+		AA0000000000000000000002 /* AppSettingsPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsPlugin.swift; sourceTree = "<group>"; };
+		AA0000000000000000000004 /* AppSettingsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsViewController.swift; sourceTree = "<group>"; };
+		AA0000000000000000000006 /* firealarm.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = firealarm.wav; sourceTree = "<group>"; };
+		AA0000000000000000000008 /* funnyalarm.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = funnyalarm.wav; sourceTree = "<group>"; };
+		AA000000000000000000000A /* horroralarm.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = horroralarm.wav; sourceTree = "<group>"; };
+		AA000000000000000000000C /* meditationalarm.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = meditationalarm.wav; sourceTree = "<group>"; };
+		AA000000000000000000000E /* policealarm.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = policealarm.wav; sourceTree = "<group>"; };
+		AA0000000000000000000010 /* softalarm.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = softalarm.wav; sourceTree = "<group>"; };
+		AA0000000000000000000012 /* strongalarm.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = strongalarm.wav; sourceTree = "<group>"; };
+		AA0000000000000000000014 /* sweetalarm.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = sweetalarm.wav; sourceTree = "<group>"; };
+		EE0000000000000000000002 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		EE0000000000000000000004 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		EE0000000000000000000005 /* AlarmNotificationExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AlarmNotificationExtension.entitlements; sourceTree = "<group>"; };
+		EE0000000000000000000006 /* AlarmNotificationExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AlarmNotificationExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -49,6 +105,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		EE0000000000000000000013 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -57,6 +120,7 @@
 			children = (
 				958DCC722DB07C7200EA8C5F /* debug.xcconfig */,
 				504EC3061FED79650016851F /* App */,
+				EE0000000000000000000001 /* AlarmNotificationExtension */,
 				504EC3051FED79650016851F /* Products */,
 			);
 			sourceTree = "<group>";
@@ -65,6 +129,7 @@
 			isa = PBXGroup;
 			children = (
 				504EC3041FED79650016851F /* App.app */,
+				EE0000000000000000000006 /* AlarmNotificationExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -79,14 +144,33 @@
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
 				504EC3131FED79650016851F /* Info.plist */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
-				A1B2C3D4E5F6A7B8C9D0E1F2 /* alarm.wav */,
+				AA0000000000000000000002 /* AppSettingsPlugin.swift */,
+				AA0000000000000000000004 /* AppSettingsViewController.swift */,
 				BB00000100010000ABCD0001 /* ExoPlayerPlugin.swift */,
 				BB00000100030000ABCD0001 /* CameraMatrixViewController.swift */,
 				BB00000100050000ABCD0001 /* MainViewController.swift */,
 				BB00000100070000ABCD0001 /* CameraMatrixWebRTCViewController.swift */,
 				50B271D01FEDC1A000F3C39B /* public */,
+				AA0000000000000000000006 /* firealarm.wav */,
+				AA0000000000000000000008 /* funnyalarm.wav */,
+				AA000000000000000000000A /* horroralarm.wav */,
+				AA000000000000000000000C /* meditationalarm.wav */,
+				AA000000000000000000000E /* policealarm.wav */,
+				AA0000000000000000000010 /* softalarm.wav */,
+				AA0000000000000000000012 /* strongalarm.wav */,
+				AA0000000000000000000014 /* sweetalarm.wav */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		EE0000000000000000000001 /* AlarmNotificationExtension */ = {
+			isa = PBXGroup;
+			children = (
+				EE0000000000000000000002 /* NotificationService.swift */,
+				EE0000000000000000000004 /* Info.plist */,
+				EE0000000000000000000005 /* AlarmNotificationExtension.entitlements */,
+			);
+			path = AlarmNotificationExtension;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -99,10 +183,12 @@
 				504EC3001FED79650016851F /* Sources */,
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
+				EE0000000000000000000017 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				EE0000000000000000000018 /* PBXTargetDependency */,
 			);
 			name = App;
 			packageProductDependencies = (
@@ -111,6 +197,23 @@
 			productName = App;
 			productReference = 504EC3041FED79650016851F /* App.app */;
 			productType = "com.apple.product-type.application";
+		};
+		EE0000000000000000000010 /* AlarmNotificationExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EE0000000000000000000016 /* Build configuration list for PBXNativeTarget "AlarmNotificationExtension" */;
+			buildPhases = (
+				EE0000000000000000000011 /* Sources */,
+				EE0000000000000000000013 /* Frameworks */,
+				EE0000000000000000000012 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AlarmNotificationExtension;
+			productName = AlarmNotificationExtension;
+			productReference = EE0000000000000000000006 /* AlarmNotificationExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -124,6 +227,10 @@
 					504EC3031FED79650016851F = {
 						CreatedOnToolsVersion = 9.2;
 						LastSwiftMigration = 1100;
+						ProvisioningStyle = Automatic;
+					};
+					EE0000000000000000000010 = {
+						CreatedOnToolsVersion = 9.2;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -145,6 +252,7 @@
 			projectRoot = "";
 			targets = (
 				504EC3031FED79650016851F /* App */,
+				EE0000000000000000000010 /* AlarmNotificationExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -159,8 +267,30 @@
 				504EC30F1FED79650016851F /* Assets.xcassets in Resources */,
 				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
-				A1B2C3D4E5F6A7B8C9D0E1F3 /* alarm.wav in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
+				AA0000000000000000000005 /* firealarm.wav in Resources */,
+				AA0000000000000000000007 /* funnyalarm.wav in Resources */,
+				AA0000000000000000000009 /* horroralarm.wav in Resources */,
+				AA000000000000000000000B /* meditationalarm.wav in Resources */,
+				AA000000000000000000000D /* policealarm.wav in Resources */,
+				AA000000000000000000000F /* softalarm.wav in Resources */,
+				AA0000000000000000000011 /* strongalarm.wav in Resources */,
+				AA0000000000000000000013 /* sweetalarm.wav in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EE0000000000000000000012 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EE0000000000000000000007 /* firealarm.wav in Resources */,
+				EE0000000000000000000008 /* funnyalarm.wav in Resources */,
+				EE0000000000000000000009 /* horroralarm.wav in Resources */,
+				EE000000000000000000000A /* meditationalarm.wav in Resources */,
+				EE000000000000000000000B /* policealarm.wav in Resources */,
+				EE000000000000000000000C /* softalarm.wav in Resources */,
+				EE000000000000000000000D /* strongalarm.wav in Resources */,
+				EE000000000000000000000E /* sweetalarm.wav in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -176,10 +306,28 @@
 				BB00000100040000ABCD0001 /* CameraMatrixViewController.swift in Sources */,
 				BB00000100060000ABCD0001 /* MainViewController.swift in Sources */,
 				BB00000100080000ABCD0001 /* CameraMatrixWebRTCViewController.swift in Sources */,
+				AA0000000000000000000001 /* AppSettingsPlugin.swift in Sources */,
+				AA0000000000000000000003 /* AppSettingsViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EE0000000000000000000011 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EE0000000000000000000003 /* NotificationService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		EE0000000000000000000018 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = EE0000000000000000000010 /* AlarmNotificationExtension */;
+			targetProxy = EE0000000000000000000019 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		504EC30B1FED79650016851F /* Main.storyboard */ = {
@@ -356,6 +504,52 @@
 			};
 			name = Release;
 		};
+		EE0000000000000000000014 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = AlarmNotificationExtension/AlarmNotificationExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 5;
+				INFOPLIST_FILE = AlarmNotificationExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = it.guardroom24.app.AlarmNotificationExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1";
+			};
+			name = Debug;
+		};
+		EE0000000000000000000015 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = AlarmNotificationExtension/AlarmNotificationExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 5;
+				INFOPLIST_FILE = AlarmNotificationExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = it.guardroom24.app.AlarmNotificationExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -373,6 +567,15 @@
 			buildConfigurations = (
 				504EC3171FED79650016851F /* Debug */,
 				504EC3181FED79650016851F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		EE0000000000000000000016 /* Build configuration list for PBXNativeTarget "AlarmNotificationExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EE0000000000000000000014 /* Debug */,
+				EE0000000000000000000015 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

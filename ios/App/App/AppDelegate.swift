@@ -1,11 +1,13 @@
 import UIKit
 import Capacitor
 import UserNotifications
+import AVFoundation
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
+    private var alarmPlayer: AVAudioPlayer?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         UNUserNotificationCenter.current().delegate = self
@@ -15,7 +17,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     func applicationWillResignActive(_ application: UIApplication) {}
     func applicationDidEnterBackground(_ application: UIApplication) {}
     func applicationWillEnterForeground(_ application: UIApplication) {}
-    func applicationDidBecomeActive(_ application: UIApplication) {}
+
+    func applicationDidBecomeActive(_ application: UIApplication) {
+        // Ferma il suono di allarme quando l'utente apre/usa l'app (come onActivityResumed su Android)
+        alarmPlayer?.stop()
+        alarmPlayer = nil
+    }
+
     func applicationWillTerminate(_ application: UIApplication) {}
 
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
@@ -37,17 +45,31 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
 extension AppDelegate: UNUserNotificationCenterDelegate {
 
-    // App in foreground: mostra banner e suona (alarm.wav gestito da iOS via payload APNs)
+    // App in foreground: suona il suono selezionato dall'utente
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.banner, .sound, .badge])
+        let ud = UserDefaults(suiteName: "group.it.guardroom24.app")
+        let soundName = ud?.string(forKey: "notif_alarm_sound") ?? "firealarm"
+
+        if !soundName.isEmpty,
+           let url = Bundle.main.url(forResource: soundName, withExtension: "wav") {
+            alarmPlayer?.stop()
+            alarmPlayer = try? AVAudioPlayer(contentsOf: url)
+            alarmPlayer?.numberOfLoops = -1  // loop finché l'utente non interagisce
+            alarmPlayer?.play()
+            completionHandler([.banner, .badge])  // no .sound — suoniamo noi
+        } else {
+            completionHandler([.banner, .sound, .badge])
+        }
     }
 
-    // Tap su notifica
+    // Tap su notifica: ferma il suono
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
+        alarmPlayer?.stop()
+        alarmPlayer = nil
         completionHandler()
     }
 }
