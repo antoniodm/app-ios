@@ -55,17 +55,7 @@ class AppSettingsViewController: UITableViewController {
         switchNotif.addTarget(self, action: #selector(notifToggled(_:)), for: .valueChanged)
 
         tokenDotLabel.font = .systemFont(ofSize: 18)
-        tokenDotLabel.sizeToFit()
-
-        bridge.webView?.evaluateJavaScript(
-            "window._guardroom_token_registered === true ? 'true' : 'false'"
-        ) { [weak self] result, _ in
-            DispatchQueue.main.async {
-                self?.tokenRegistered = (result as? String) == "true"
-                self?.applyDotColor()
-                self?.tableView.reloadSections(IndexSet(integer: 1), with: .none)
-            }
-        }
+        applyDotColor()
     }
 
     @objc private func close() {
