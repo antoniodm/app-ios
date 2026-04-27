@@ -251,35 +251,49 @@ class AppSettingsViewController: UITableViewController {
 
     // MARK: - Token operations
 
+    // Dismissiamo il modal PRIMA di fare la request:
+    // qualsiasi operazione di rete con il modal aperto sopra WKWebView causa deadlock su iOS 17+
     private func doRegisterToken() {
-        dlog("doRegisterToken — token=\(cachedToken?.prefix(8).description ?? "NIL") url=\(cachedServerURL?.host ?? "NIL")")
-        guard let token = cachedToken else {
-            showAlert("Token APNs non disponibile.")
-            return
-        }
-        sendToken(token, path: "/json_savefcmtoken") { [weak self] status in
-            self?.updateTokenState(status == 204)
+        dlog("doRegisterToken — dismisso il modal, poi invio")
+        guard let token = cachedToken else { showAlert("Token APNs non disponibile."); return }
+        guard cachedServerURL != nil else { showAlert("URL server non disponibile."); return }
+        let presenter = presentingViewController
+        previewPlayer?.stop(); previewPlayer = nil
+        dismiss(animated: true) { [self] in   // strong ref: mantiene self vivo durante la request
+            self.sendToken(token, path: "/json_savefcmtoken") { status in
+                let msg = status == 204 ? "Token notifiche registrato con successo." : "Errore registrazione token (http_code=\(status))"
+                DispatchQueue.main.async {
+                    let alert = UIAlertController(title: nil, message: msg, preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: "OK", style: .default))
+                    presenter?.present(alert, animated: true)
+                }
+            }
         }
     }
 
     private func doRemoveToken() {
-        dlog("doRemoveToken — token=\(cachedToken?.prefix(8).description ?? "NIL")")
-        guard let token = cachedToken else {
-            showAlert("Token APNs non disponibile.")
-            return
-        }
-        sendToken(token, path: "/json_removefcmtoken") { [weak self] status in
-            self?.updateTokenState(status != 204)
+        dlog("doRemoveToken — dismisso il modal, poi invio")
+        guard let token = cachedToken else { showAlert("Token APNs non disponibile."); return }
+        guard cachedServerURL != nil else { showAlert("URL server non disponibile."); return }
+        let presenter = presentingViewController
+        previewPlayer?.stop(); previewPlayer = nil
+        dismiss(animated: true) { [self] in
+            self.sendToken(token, path: "/json_removefcmtoken") { status in
+                let msg = status == 204 ? "Token notifiche rimosso." : "Errore rimozione token (http_code=\(status))"
+                DispatchQueue.main.async {
+                    let alert = UIAlertController(title: nil, message: msg, preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: "OK", style: .default))
+                    presenter?.present(alert, animated: true)
+                }
+            }
         }
     }
 
-    // Task.detached + async/await: bypassa run loop e IPC network process di WKWebView
     private func sendToken(_ token: String, path: String, completion: @escaping (Int) -> Void) {
-        dlog("sendToken path=\(path)")
         guard let baseURL = cachedServerURL,
               let url = URL(string: path, relativeTo: baseURL)?.absoluteURL else {
-            dlog("sendToken — URL non costruibile (serverURL=\(cachedServerURL?.absoluteString ?? "nil"))")
-            showAlert("URL server non disponibile.")
+            os_log("GUARDROOM_SETTINGS sendToken — URL non costruibile", type: .fault)
+            completion(500)
             return
         }
 
@@ -289,7 +303,7 @@ class AppSettingsViewController: UITableViewController {
         request.httpBody = "v_token=\(token.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? token)".data(using: .utf8)
 
         let cookies = HTTPCookieStorage.shared.cookies(for: url) ?? []
-        dlog("sendToken — url=\(url.absoluteString) cookie: \(cookies.count) [\(cookies.map(\.name).joined(separator: ","))]")
+        os_log("GUARDROOM_SETTINGS sendToken — url=%{public}@ cookie:%d", type: .fault, url.absoluteString, cookies.count)
         let cookieHeaders = HTTPCookie.requestHeaderFields(with: cookies)
         for (k, v) in cookieHeaders { request.setValue(v, forHTTPHeaderField: k) }
 
@@ -298,28 +312,18 @@ class AppSettingsViewController: UITableViewController {
         config.httpShouldSetCookies = false
         let session = URLSession(configuration: config)
 
-        Task.detached { [weak self] in
+        session.dataTask(with: request) { data, response, error in
+            let httpStatus = (response as? HTTPURLResponse)?.statusCode ?? -1
+            let body = data.flatMap { String(data: $0.prefix(200), encoding: .utf8) } ?? "nil"
             var status = 500
-            var httpStatus = -1
-            var body = "nil"
-            do {
-                let (data, response) = try await session.data(for: request)
-                httpStatus = (response as? HTTPURLResponse)?.statusCode ?? -1
-                body = String(data: data.prefix(300), encoding: .utf8) ?? "nil"
-                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let code = json["http_code"] {
-                    status = Int(String(describing: code)) ?? 500
-                }
-            } catch {
-                body = error.localizedDescription
+            if let data = data,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let code = json["http_code"] {
+                status = Int(String(describing: code)) ?? 500
             }
-            await MainActor.run {
-                self?.dlog("sendToken — httpStatus=\(httpStatus) body=\(body)")
-                self?.dlog("sendToken — http_code=\(status)")
-                completion(status)
-            }
-        }
-        dlog("sendToken — Task avviato")
+            os_log("GUARDROOM_SETTINGS sendToken — httpStatus=%d http_code=%d body=%{public}@", type: .fault, httpStatus, status, body)
+            DispatchQueue.main.async { completion(status) }
+        }.resume()
     }
 
     // MARK: - Azioni
