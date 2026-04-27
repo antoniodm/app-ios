@@ -273,8 +273,7 @@ class AppSettingsViewController: UITableViewController {
         }
     }
 
-    // ZERO chiamate WKWebView — session ephemeral con cookie disabilitati, cookie aggiunti manualmente
-    // URLSession.shared su iOS 17+ sincronizza cookie con WKWebView internamente → stesso deadlock
+    // Task.detached + async/await: bypassa run loop e IPC network process di WKWebView
     private func sendToken(_ token: String, path: String, completion: @escaping (Int) -> Void) {
         dlog("sendToken path=\(path)")
         guard let baseURL = cachedServerURL,
@@ -289,34 +288,38 @@ class AppSettingsViewController: UITableViewController {
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = "v_token=\(token.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? token)".data(using: .utf8)
 
-        // Cookie manuali da HTTPCookieStorage.shared (sincronizzato da AppDelegate tramite CookieSyncer)
         let cookies = HTTPCookieStorage.shared.cookies(for: url) ?? []
         dlog("sendToken — url=\(url.absoluteString) cookie: \(cookies.count) [\(cookies.map(\.name).joined(separator: ","))]")
         let cookieHeaders = HTTPCookie.requestHeaderFields(with: cookies)
         for (k, v) in cookieHeaders { request.setValue(v, forHTTPHeaderField: k) }
 
-        // Session ephemeral: ZERO gestione automatica cookie → nessuna IPC con WKWebView
         let config = URLSessionConfiguration.ephemeral
         config.httpCookieAcceptPolicy = .never
         config.httpShouldSetCookies = false
         let session = URLSession(configuration: config)
 
-        session.dataTask(with: request) { [weak self] data, response, error in
-            let httpStatus = (response as? HTTPURLResponse)?.statusCode ?? -1
-            let body = data.flatMap { String(data: $0.prefix(300), encoding: .utf8) } ?? "nil"
+        Task.detached { [weak self] in
             var status = 500
-            if let data = data,
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let code = json["http_code"] {
-                status = Int(String(describing: code)) ?? 500
+            var httpStatus = -1
+            var body = "nil"
+            do {
+                let (data, response) = try await session.data(for: request)
+                httpStatus = (response as? HTTPURLResponse)?.statusCode ?? -1
+                body = String(data: data.prefix(300), encoding: .utf8) ?? "nil"
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let code = json["http_code"] {
+                    status = Int(String(describing: code)) ?? 500
+                }
+            } catch {
+                body = error.localizedDescription
             }
-            DispatchQueue.main.async {
-                self?.dlog("sendToken — httpStatus=\(httpStatus) error=\(error?.localizedDescription ?? "none") body=\(body)")
+            await MainActor.run {
+                self?.dlog("sendToken — httpStatus=\(httpStatus) body=\(body)")
                 self?.dlog("sendToken — http_code=\(status)")
                 completion(status)
             }
-        }.resume()
-        dlog("sendToken — request inviata")
+        }
+        dlog("sendToken — Task avviato")
     }
 
     // MARK: - Azioni
