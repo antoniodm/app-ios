@@ -35,18 +35,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
-        NotificationCenter.default.post(name: .capacitorDidRegisterForRemoteNotifications, object: deviceToken)
         let token = deviceToken.map { String(format: "%02x", $0) }.joined()
-        NotificationCenter.default.post(name: .apnsTokenReceived, object: nil, userInfo: ["token": token])
+        UserDefaults.standard.set(token, forKey: "apns_device_token")
+        NotificationCenter.default.post(name: .capacitorDidRegisterForRemoteNotifications, object: deviceToken)
     }
 
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
         NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: error)
     }
-}
-
-extension Notification.Name {
-    static let apnsTokenReceived = Notification.Name("it.guardroom24.apnsTokenReceived")
 }
 
 extension AppDelegate: UNUserNotificationCenterDelegate {

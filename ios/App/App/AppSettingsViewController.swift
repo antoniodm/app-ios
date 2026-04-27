@@ -195,26 +195,24 @@ class AppSettingsViewController: UITableViewController {
 
     // MARK: - Token operations
 
-    private func observeToken(remove: Bool) {
-        NotificationCenter.default.removeObserver(self, name: .apnsTokenReceived, object: nil)
-        NotificationCenter.default.addObserver(forName: .apnsTokenReceived, object: nil, queue: .main) { [weak self] n in
-            NotificationCenter.default.removeObserver(self as Any, name: .apnsTokenReceived, object: nil)
-            guard let token = n.userInfo?["token"] as? String else { return }
-            let path = remove ? "/json_removefcmtoken" : "/json_savefcmtoken"
-            self?.sendToken(token, path: path) { status in
-                self?.updateTokenState(remove ? status != 204 : status == 204)
-            }
+    private func doRegisterToken() {
+        guard let token = UserDefaults.standard.string(forKey: "apns_device_token") else {
+            showAlert("Token non disponibile. Apri la home dell'app mentre sei connesso per generarlo.")
+            return
+        }
+        sendToken(token, path: "/json_savefcmtoken") { [weak self] status in
+            self?.updateTokenState(status == 204)
         }
     }
 
-    private func doRegisterToken() {
-        observeToken(remove: false)
-        UIApplication.shared.registerForRemoteNotifications()
-    }
-
     private func doRemoveToken() {
-        observeToken(remove: true)
-        UIApplication.shared.registerForRemoteNotifications()
+        guard let token = UserDefaults.standard.string(forKey: "apns_device_token") else {
+            showAlert("Token non disponibile.")
+            return
+        }
+        sendToken(token, path: "/json_removefcmtoken") { [weak self] status in
+            self?.updateTokenState(status != 204)
+        }
     }
 
     private func sendToken(_ token: String, path: String, completion: @escaping (Int) -> Void) {
