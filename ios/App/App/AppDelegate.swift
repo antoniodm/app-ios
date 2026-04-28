@@ -23,20 +23,28 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     private var alarmPlayer: AVAudioPlayer?
     private let cookieSyncer = CookieSyncer()
     private var cookieSyncerAdded = false
+    private var resignedActiveAt: Date?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         return true
     }
 
-    func applicationWillResignActive(_ application: UIApplication) {}
+    func applicationWillResignActive(_ application: UIApplication) {
+        resignedActiveAt = Date()
+    }
     func applicationDidEnterBackground(_ application: UIApplication) {}
     func applicationWillEnterForeground(_ application: UIApplication) {}
 
     func applicationDidBecomeActive(_ application: UIApplication) {
-        // Ferma il suono di allarme quando l'utente apre/usa l'app
-        alarmPlayer?.stop()
-        alarmPlayer = nil
+        // Ferma il suono di allarme solo se l'app era davvero in background (>0.5s)
+        // Un banner di notifica causa un ciclo resign/active di ~50ms: in quel caso NON stoppare il player
+        let wasReallyInactive = resignedActiveAt.map { Date().timeIntervalSince($0) > 0.5 } ?? true
+        resignedActiveAt = nil
+        if wasReallyInactive {
+            alarmPlayer?.stop()
+            alarmPlayer = nil
+        }
         // Aggiorna il token APNs in cache
         UIApplication.shared.registerForRemoteNotifications()
         // Sincronizza cookie WKWebView → HTTPCookieStorage.shared (contesto sicuro, nessun modal)
