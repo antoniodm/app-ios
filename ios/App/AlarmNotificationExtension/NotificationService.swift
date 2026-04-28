@@ -2,9 +2,6 @@ import UserNotifications
 
 class NotificationService: UNNotificationServiceExtension {
 
-    private let appGroupID = "group.it.guardroom24.app"
-    private let soundKey   = "notif_alarm_sound"
-
     private var contentHandler: ((UNNotificationContent) -> Void)?
     private var bestContent: UNMutableNotificationContent?
 
@@ -18,8 +15,8 @@ class NotificationService: UNNotificationServiceExtension {
         }
         self.bestContent = content
 
-        let ud = UserDefaults(suiteName: appGroupID)
-        let soundName = ud?.string(forKey: soundKey) ?? "firealarm"
+        // Legge il suono dal payload APNs (campo "sound_name"), fallback "firealarm"
+        let soundName = request.content.userInfo["sound_name"] as? String ?? "firealarm"
 
         if soundName.isEmpty {
             content.sound = .default
