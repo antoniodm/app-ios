@@ -27,6 +27,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         UNUserNotificationCenter.current().delegate = self
+        window?.backgroundColor = .black
         return true
     }
 
@@ -37,6 +38,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // NON viene chiamato per il ciclo resign/active del banner di notifica
         alarmPlayer?.stop()
         alarmPlayer = nil
+
+        // Se il processo WebContent è stato killato da iOS (schermo bianco), ricarica
+        if let vc = window?.rootViewController as? CAPBridgeViewController,
+           let wv = vc.webView, wv.url == nil {
+            wv.reload()
+        }
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
