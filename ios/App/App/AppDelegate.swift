@@ -24,31 +24,22 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     private var alarmPlayer: AVAudioPlayer?
     private let cookieSyncer = CookieSyncer()
     private var cookieSyncerAdded = false
-    private var resignedActiveAt: Date?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         UNUserNotificationCenter.current().delegate = self
         return true
     }
 
-    func applicationWillResignActive(_ application: UIApplication) {
-        resignedActiveAt = Date()
-        os_log("GUARDROOM willResignActive", type: .fault)
-    }
+    func applicationWillResignActive(_ application: UIApplication) {}
     func applicationDidEnterBackground(_ application: UIApplication) {}
-    func applicationWillEnterForeground(_ application: UIApplication) {}
+    func applicationWillEnterForeground(_ application: UIApplication) {
+        // Ferma il suono di allarme quando l'utente torna davvero dal background
+        // NON viene chiamato per il ciclo resign/active del banner di notifica
+        alarmPlayer?.stop()
+        alarmPlayer = nil
+    }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
-        // Ferma il suono di allarme solo se l'app era davvero in background (>0.5s)
-        // Un banner di notifica causa un ciclo resign/active di ~50ms: in quel caso NON stoppare il player
-        let elapsed = resignedActiveAt.map { Date().timeIntervalSince($0) } ?? -1
-        let wasReallyInactive = elapsed < 0 || elapsed > 0.5
-        resignedActiveAt = nil
-        os_log("GUARDROOM didBecomeActive elapsed=%.3f wasReallyInactive=%{public}@ playerNil=%{public}@", type: .fault, elapsed, wasReallyInactive ? "true" : "false", alarmPlayer == nil ? "true" : "false")
-        if wasReallyInactive {
-            alarmPlayer?.stop()
-            alarmPlayer = nil
-        }
         // Aggiorna il token APNs in cache
         UIApplication.shared.registerForRemoteNotifications()
         // Sincronizza cookie WKWebView → HTTPCookieStorage.shared (contesto sicuro, nessun modal)
