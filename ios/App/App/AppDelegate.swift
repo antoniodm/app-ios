@@ -3,6 +3,7 @@ import Capacitor
 import UserNotifications
 import AVFoundation
 import WebKit
+import os.log
 
 // Sincronizza i cookie WKWebView → HTTPCookieStorage.shared
 // In questo modo URLSession.shared li usa automaticamente senza toccare WKWebView dal modal
@@ -32,6 +33,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func applicationWillResignActive(_ application: UIApplication) {
         resignedActiveAt = Date()
+        os_log("GUARDROOM willResignActive", type: .fault)
     }
     func applicationDidEnterBackground(_ application: UIApplication) {}
     func applicationWillEnterForeground(_ application: UIApplication) {}
@@ -39,8 +41,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     func applicationDidBecomeActive(_ application: UIApplication) {
         // Ferma il suono di allarme solo se l'app era davvero in background (>0.5s)
         // Un banner di notifica causa un ciclo resign/active di ~50ms: in quel caso NON stoppare il player
-        let wasReallyInactive = resignedActiveAt.map { Date().timeIntervalSince($0) > 0.5 } ?? true
+        let elapsed = resignedActiveAt.map { Date().timeIntervalSince($0) } ?? -1
+        let wasReallyInactive = elapsed < 0 || elapsed > 0.5
         resignedActiveAt = nil
+        os_log("GUARDROOM didBecomeActive elapsed=%.3f wasReallyInactive=%{public}@ playerNil=%{public}@", type: .fault, elapsed, wasReallyInactive ? "true" : "false", alarmPlayer == nil ? "true" : "false")
         if wasReallyInactive {
             alarmPlayer?.stop()
             alarmPlayer = nil
@@ -89,15 +93,22 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         let ud = UserDefaults(suiteName: "group.it.guardroom24.app")
         let soundName = ud?.string(forKey: "notif_alarm_sound") ?? "firealarm"
+        os_log("GUARDROOM willPresent soundName=%{public}@ ud=%{public}@", type: .fault, soundName, ud == nil ? "nil" : "ok")
 
         if !soundName.isEmpty,
            let url = Bundle.main.url(forResource: soundName, withExtension: "wav") {
             alarmPlayer?.stop()
-            alarmPlayer = try? AVAudioPlayer(contentsOf: url)
-            alarmPlayer?.numberOfLoops = -1
-            alarmPlayer?.play()
+            do {
+                alarmPlayer = try AVAudioPlayer(contentsOf: url)
+                alarmPlayer?.numberOfLoops = -1
+                let ok = alarmPlayer?.play() ?? false
+                os_log("GUARDROOM willPresent play ok=%{public}@", type: .fault, ok ? "true" : "false")
+            } catch {
+                os_log("GUARDROOM willPresent AVAudioPlayer error=%{public}@", type: .fault, error.localizedDescription)
+            }
             completionHandler([.banner, .badge])
         } else {
+            os_log("GUARDROOM willPresent empty sound → system", type: .fault)
             completionHandler([.banner, .sound, .badge])
         }
     }
