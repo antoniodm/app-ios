@@ -208,10 +208,9 @@ class AppSettingsViewController: UITableViewController {
             let key = SOUND_KEYS[i]
             let isSelected = key == current
             let action = UIAlertAction(title: isSelected ? "✓ " + label : label, style: .default) { [weak self] _ in
-                self?.previewPlayer?.stop()
-                self?.previewPlayer = nil
                 UserDefaults(suiteName: APP_GROUP_ID)?.set(key, forKey: SOUND_KEY)
                 self?.tableView.reloadRows(at: [IndexPath(row: 1, section: 1)], with: .none)
+                self?.playPreview(key: key)
             }
             alert.addAction(action)
         }
