@@ -1,6 +1,10 @@
 import UserNotifications
+import os.log
 
 class NotificationService: UNNotificationServiceExtension {
+
+    private let appGroupID = "group.it.guardroom24.app"
+    private let soundKey   = "notif_alarm_sound"
 
     private var contentHandler: ((UNNotificationContent) -> Void)?
     private var bestContent: UNMutableNotificationContent?
@@ -15,8 +19,15 @@ class NotificationService: UNNotificationServiceExtension {
         }
         self.bestContent = content
 
-        // Legge il suono dal payload APNs (campo "sound_name"), fallback "firealarm"
-        let soundName = request.content.userInfo["sound_name"] as? String ?? "firealarm"
+        let ud = UserDefaults(suiteName: appGroupID)
+        let stored = ud?.string(forKey: soundKey)
+        let soundName = stored ?? "firealarm"
+
+        os_log("GUARDROOM_EXT didReceive — ud=%{public}@ stored=%{public}@ soundName=%{public}@",
+               type: .fault,
+               ud == nil ? "nil" : "ok",
+               stored ?? "nil",
+               soundName)
 
         if soundName.isEmpty {
             content.sound = .default
@@ -28,6 +39,7 @@ class NotificationService: UNNotificationServiceExtension {
     }
 
     override func serviceExtensionTimeWillExpire() {
+        os_log("GUARDROOM_EXT serviceExtensionTimeWillExpire", type: .fault)
         if let content = bestContent {
             content.sound = .default
             contentHandler?(content)
