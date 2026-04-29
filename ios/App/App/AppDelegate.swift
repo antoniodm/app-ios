@@ -93,20 +93,24 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         let soundName = ud?.string(forKey: "notif_alarm_sound") ?? "firealarm"
         os_log("GUARDROOM willPresent soundName=%{public}@ ud=%{public}@", type: .fault, soundName, ud == nil ? "nil" : "ok")
 
-        if !soundName.isEmpty,
-           let url = Bundle.main.url(forResource: soundName, withExtension: "wav") {
+        let fileUrl = Bundle.main.url(forResource: soundName, withExtension: "wav")
+        os_log("GUARDROOM willPresent fileUrl=%{public}@", type: .fault, fileUrl?.path ?? "NIL")
+
+        if !soundName.isEmpty, let url = fileUrl {
             alarmPlayer?.stop()
             do {
+                try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+                try AVAudioSession.sharedInstance().setActive(true)
                 alarmPlayer = try AVAudioPlayer(contentsOf: url)
                 alarmPlayer?.numberOfLoops = -1
                 let ok = alarmPlayer?.play() ?? false
                 os_log("GUARDROOM willPresent play ok=%{public}@", type: .fault, ok ? "true" : "false")
             } catch {
-                os_log("GUARDROOM willPresent AVAudioPlayer error=%{public}@", type: .fault, error.localizedDescription)
+                os_log("GUARDROOM willPresent error=%{public}@", type: .fault, error.localizedDescription)
             }
             completionHandler([.banner, .badge])
         } else {
-            os_log("GUARDROOM willPresent empty sound → system", type: .fault)
+            os_log("GUARDROOM willPresent sound not found → system", type: .fault)
             completionHandler([.banner, .sound, .badge])
         }
     }
