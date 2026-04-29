@@ -2,7 +2,6 @@ import UIKit
 import UserNotifications
 import Capacitor
 import AVFoundation
-import os.log
 
 private let KEY_BIO_USER  = "CapacitorStorage.bio_username"
 private let KEY_BIO_PASS  = "CapacitorStorage.bio_password"
@@ -20,7 +19,7 @@ class AppSettingsViewController: UITableViewController {
 
     private let bridge: CAPBridgeProtocol
 
-    private let sections = ["ACCESSO BIOMETRICO", "NOTIFICHE", "DEBUG"]
+    private let sections = ["ACCESSO BIOMETRICO", "NOTIFICHE"]
     private let bioRows  = ["Impronta / Face ID", "Gestisci impronte del telefono →"]
 
     private var switchBio   = UISwitch()
@@ -30,10 +29,7 @@ class AppSettingsViewController: UITableViewController {
     private let tokenDotLabel   = UILabel()
 
     private var previewPlayer: AVAudioPlayer?
-    private var debugLog: [String] = []
-    private let debugTextView = UITextView()
 
-    // Solo URL base (proprietà semplice, nessuna IPC WKWebView)
     private var cachedServerURL: URL?
     private var cachedToken: String?
 
@@ -44,40 +40,11 @@ class AppSettingsViewController: UITableViewController {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    // MARK: - Log (sempre su main thread)
-
-    private func dlog(_ msg: String) {
-        let t = Date().timeIntervalSince1970.truncatingRemainder(dividingBy: 10000)
-        let line = String(format: "%.2f %@", t, msg)
-        debugLog.append(line)
-        os_log("GUARDROOM_SETTINGS %{public}@", type: .fault, line)
-        updateDebugHeader()
-    }
-
-    private func updateDebugHeader() {
-        // Chiamato sempre su main thread
-        let text = debugLog.joined(separator: "\n")
-        debugTextView.text = text
-        let bottom = debugTextView.contentSize.height - debugTextView.bounds.height
-        if bottom > 0 {
-            debugTextView.setContentOffset(CGPoint(x: 0, y: bottom), animated: false)
-        }
-    }
-
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "Impostazioni App"
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             barButtonSystemItem: .close, target: self, action: #selector(close))
-
-        // Header con log debug — visibile subito senza nessun tap
-        debugTextView.isEditable = false
-        debugTextView.isScrollEnabled = true
-        debugTextView.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
-        debugTextView.textColor = .secondaryLabel
-        debugTextView.backgroundColor = .systemBackground
-        debugTextView.frame = CGRect(x: 0, y: 0, width: tableView.bounds.width, height: 180)
-        tableView.tableHeaderView = debugTextView
 
         let ud = UserDefaults.standard
         switchBio.isOn = ud.string(forKey: KEY_BIO_USER) != nil
@@ -93,21 +60,11 @@ class AppSettingsViewController: UITableViewController {
         tokenDotLabel.font = .systemFont(ofSize: 18)
         applyDotColor()
 
-        // ZERO chiamate WKWebView: solo UserDefaults e proprietà .url (lettura semplice, nessuna IPC)
         cachedToken = ud.string(forKey: "apns_device_token")
-        dlog("viewDidLoad — token=\(cachedToken?.prefix(8).description ?? "NIL")")
 
         if let webView = bridge.webView, let url = webView.url {
             cachedServerURL = url
-            dlog("viewDidLoad — serverURL=\(url.absoluteString)")
-        } else {
-            dlog("viewDidLoad — webView.url nil")
         }
-
-        // Cookie: AppDelegate.applicationDidBecomeActive li ha già sincronizzati
-        // in HTTPCookieStorage.shared tramite CookieSyncer — URLSession li usa automaticamente
-        let cookieCount = HTTPCookieStorage.shared.cookies?.count ?? 0
-        dlog("viewDidLoad — cookie in HTTPCookieStorage: \(cookieCount)")
     }
 
     @objc private func close() {
@@ -126,8 +83,7 @@ class AppSettingsViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         if section == 0 { return bioRows.count }
-        if section == 1 { return tokenRegistered ? 4 : 3 }
-        return 1
+        return tokenRegistered ? 4 : 3
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -142,7 +98,7 @@ class AppSettingsViewController: UITableViewController {
                 cell.textLabel?.textColor = .systemBlue
                 cell.selectionStyle = .default
             }
-        } else if indexPath.section == 1 {
+        } else {
             switch indexPath.row {
             case 0:
                 cell.textLabel?.text = "Notifiche abilitate"
@@ -163,10 +119,6 @@ class AppSettingsViewController: UITableViewController {
                 cell.selectionStyle = .default
             default: break
             }
-        } else {
-            cell.textLabel?.text = "Copia log negli appunti"
-            cell.textLabel?.textColor = .systemOrange
-            cell.selectionStyle = .default
         }
         return cell
     }
@@ -181,17 +133,7 @@ class AppSettingsViewController: UITableViewController {
             doRegisterToken()
         } else if indexPath.section == 1 && indexPath.row == 3 {
             doRemoveToken()
-        } else if indexPath.section == 2 {
-            copyLog()
         }
-    }
-
-    // MARK: - Debug
-
-    private func copyLog() {
-        let text = debugLog.isEmpty ? "(nessun log)" : debugLog.joined(separator: "\n")
-        UIPasteboard.general.string = text
-        showAlert("Log copiato negli appunti (\(debugLog.count) righe)")
     }
 
     // MARK: - Suono allarme
@@ -244,7 +186,6 @@ class AppSettingsViewController: UITableViewController {
     }
 
     private func updateTokenState(_ registered: Bool) {
-        dlog("updateTokenState registered=\(registered)")
         tokenRegistered = registered
         applyDotColor()
         tableView.reloadSections(IndexSet(integer: 1), with: .none)
@@ -252,15 +193,12 @@ class AppSettingsViewController: UITableViewController {
 
     // MARK: - Token operations
 
-    // Dismissiamo il modal PRIMA di fare la request:
-    // qualsiasi operazione di rete con il modal aperto sopra WKWebView causa deadlock su iOS 17+
     private func doRegisterToken() {
-        dlog("doRegisterToken — dismisso il modal, poi invio")
         guard let token = cachedToken else { showAlert("Token APNs non disponibile."); return }
         guard cachedServerURL != nil else { showAlert("URL server non disponibile."); return }
         let presenter = presentingViewController
         previewPlayer?.stop(); previewPlayer = nil
-        dismiss(animated: true) { [self] in   // strong ref: mantiene self vivo durante la request
+        dismiss(animated: true) { [self] in
             self.sendToken(token, path: "/json_savefcmtoken") { status in
                 let msg = status == 204 ? "Token notifiche registrato con successo." : "Errore registrazione token (http_code=\(status))"
                 DispatchQueue.main.async {
@@ -273,7 +211,6 @@ class AppSettingsViewController: UITableViewController {
     }
 
     private func doRemoveToken() {
-        dlog("doRemoveToken — dismisso il modal, poi invio")
         guard let token = cachedToken else { showAlert("Token APNs non disponibile."); return }
         guard cachedServerURL != nil else { showAlert("URL server non disponibile."); return }
         let presenter = presentingViewController
@@ -293,7 +230,6 @@ class AppSettingsViewController: UITableViewController {
     private func sendToken(_ token: String, path: String, completion: @escaping (Int) -> Void) {
         guard let baseURL = cachedServerURL,
               let url = URL(string: path, relativeTo: baseURL)?.absoluteURL else {
-            os_log("GUARDROOM_SETTINGS sendToken — URL non costruibile", type: .fault)
             completion(500)
             return
         }
@@ -304,7 +240,6 @@ class AppSettingsViewController: UITableViewController {
         request.httpBody = "v_token=\(token.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? token)".data(using: .utf8)
 
         let cookies = HTTPCookieStorage.shared.cookies(for: url) ?? []
-        os_log("GUARDROOM_SETTINGS sendToken — url=%{public}@ cookie:%d", type: .fault, url.absoluteString, cookies.count)
         let cookieHeaders = HTTPCookie.requestHeaderFields(with: cookies)
         for (k, v) in cookieHeaders { request.setValue(v, forHTTPHeaderField: k) }
 
@@ -314,15 +249,12 @@ class AppSettingsViewController: UITableViewController {
         let session = URLSession(configuration: config)
 
         session.dataTask(with: request) { data, response, error in
-            let httpStatus = (response as? HTTPURLResponse)?.statusCode ?? -1
-            let body = data.flatMap { String(data: $0.prefix(200), encoding: .utf8) } ?? "nil"
             var status = 500
             if let data = data,
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let code = json["http_code"] {
                 status = Int(String(describing: code)) ?? 500
             }
-            os_log("GUARDROOM_SETTINGS sendToken — httpStatus=%d http_code=%d body=%{public}@", type: .fault, httpStatus, status, body)
             DispatchQueue.main.async { completion(status) }
         }.resume()
     }
